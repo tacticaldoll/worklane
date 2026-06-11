@@ -1,0 +1,9 @@
+[package]
+name = "worklane-core"
+description = "Core traits, job model, envelope, and errors for worklane."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
