@@ -74,10 +74,24 @@ Claude Code users additionally have slash commands:
   `chore`, `build`, `ci`.
 - Scope is optional; prefer the OpenSpec change name or capability
   (e.g. `feat(add-auth): add password reset endpoint`).
-- Granularity: one logical change per commit. During `apply`, commit per
-  completed task in `tasks.md` (or a small group of tightly-coupled tasks).
-  Never bundle unrelated changes into one commit.
 - Write commit messages in English (per the Language policy).
+- Never bundle unrelated changes into one commit.
+
+### Commit flow across the OpenSpec lifecycle
+
+- **Propose:** one `docs(<change>): propose …` for proposal/design/specs/tasks.
+- **Apply:** one or more `feat|fix(<change>): …`. Implement against the change's
+  delta specs (the contract) and verify with the DoD plus tests that encode the
+  spec scenarios. Commit per coherent, compiling milestone — not per checkbox,
+  not one mega-commit.
+- **Sync:** a `docs(specs): sync <change>` commit promoting the *verified* delta
+  specs into `openspec/specs/`. Triggered by verification passing, never before;
+  may run per shipped increment for long-running changes.
+- **Archive:** a `chore(openspec): archive <change>` commit that files the
+  completed change away.
+
+During apply the delta spec in `changes/<change>/specs/` is the verification
+target; `openspec/specs/` records shipped truth and changes only at sync.
 
 ## Build, test, and Definition of Done
 
