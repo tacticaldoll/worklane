@@ -71,7 +71,8 @@ Run it with `cargo run -p worklane --example basic`.
 This project uses spec-driven development via
 [OpenSpec](https://github.com/Fission-AI/OpenSpec). See [`AGENTS.md`](AGENTS.md)
 for the workflow, `openspec/specs/` for the authoritative job-lifecycle
-semantics, and [`BACKLOG.md`](BACKLOG.md) for deferred ideas.
+semantics, [`docs/development-flow.md`](docs/development-flow.md) for the
+change/commit checklist, and [`BACKLOG.md`](BACKLOG.md) for deferred ideas.
 
 ## License
 

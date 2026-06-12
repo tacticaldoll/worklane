@@ -60,6 +60,25 @@ Claude Code users additionally have slash commands:
 - Treat `openspec/specs/` as the truth: reflect requirement changes there via the
   **sync** step, not by editing code silently.
 
+## Change prioritization
+
+When comparing possible changes, prefer the one that protects the core contract
+earliest:
+
+1. **Correctness foundations:** changes that prevent invalid lifecycle states,
+   stale resolution, data loss, duplicate mutation, or broken at-least-once
+   semantics.
+2. **Specified feature completeness:** changes that make already-declared API or
+   spec concepts fully real, such as lane partitioning.
+3. **Operator and developer ergonomics:** polling loops, dashboards, CLI
+   convenience, metrics, and other workflows around the core loop.
+4. **Scale-out features:** concurrency, durable brokers, schedulers, and
+   distributed behavior, after the underlying contract is strong enough to
+   support them.
+
+Do not add concurrency or durable-broker scope merely because a correctness
+foundation enables it. Keep the enabling contract change separate and small.
+
 ## Language
 
 - Write all OpenSpec artifacts (specs, proposals, designs, tasks) and code
@@ -92,6 +111,7 @@ Claude Code users additionally have slash commands:
 
 During apply the delta spec in `changes/<change>/specs/` is the verification
 target; `openspec/specs/` records shipped truth and changes only at sync.
+For a short, copyable checklist, see `docs/development-flow.md`.
 
 ## Build, test, and Definition of Done
 
