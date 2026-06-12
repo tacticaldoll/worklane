@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use worklane::{
-    Broker, Client, HandlerError, HandlerResult, Job, JobContext, JobId, NewJob, RetryPolicy,
-    Worker, async_trait,
+    Broker, Client, Error, HandlerError, HandlerResult, Job, JobContext, NewJob,
+    ReservationReceipt, RetryPolicy, Worker, async_trait,
 };
 use worklane_memory::{InMemoryBroker, ManualClock};
 
@@ -70,6 +70,21 @@ impl Job for EchoJob {
                 payload.n
             )))
         }
+    }
+}
+
+struct ExpireThenOkJob {
+    clock: Arc<ManualClock>,
+    advance_by: Duration,
+}
+
+#[async_trait]
+impl Job for ExpireThenOkJob {
+    type Payload = Unit;
+    const KIND: &'static str = "expire_then_ok";
+    async fn run(&self, _ctx: JobContext, _payload: Unit) -> HandlerResult {
+        self.clock.advance(self.advance_by);
+        Ok(())
     }
 }
 
@@ -214,7 +229,7 @@ async fn lease_expiry_requeues() {
         .unwrap();
 
     let first = broker.reserve("default").await.unwrap().expect("a job");
-    assert_eq!(first.id, id);
+    assert_eq!(first.envelope.id, id);
     assert!(
         broker.reserve("default").await.unwrap().is_none(),
         "leased, not reservable"
@@ -226,14 +241,148 @@ async fn lease_expiry_requeues() {
         .await
         .unwrap()
         .expect("requeued after lease");
-    assert_eq!(again.id, id);
+    assert_eq!(again.envelope.id, id);
+    assert_ne!(again.receipt, first.receipt);
 }
 
 #[tokio::test]
-async fn ack_unknown_job_is_an_error() {
-    let broker = InMemoryBroker::new();
+async fn valid_receipts_resolve_jobs() {
+    let clock = Arc::new(ManualClock::new());
+    let broker = InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(60));
+
+    broker
+        .enqueue(NewJob {
+            kind: "ok".to_string(),
+            payload: b"null".to_vec(),
+            max_attempts: 3,
+        })
+        .await
+        .unwrap();
+    let acked = broker.reserve("default").await.unwrap().expect("ack job");
+    broker.ack(acked.receipt).await.unwrap();
+    assert_eq!(broker.len(), 0);
+
+    broker
+        .enqueue(NewJob {
+            kind: "ok".to_string(),
+            payload: b"null".to_vec(),
+            max_attempts: 3,
+        })
+        .await
+        .unwrap();
+    let retried = broker.reserve("default").await.unwrap().expect("retry job");
+    broker
+        .retry(retried.receipt, Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert!(broker.reserve("default").await.unwrap().is_none());
+    clock.advance(Duration::from_secs(5));
+    let retried_again = broker.reserve("default").await.unwrap().expect("retried");
+    assert_eq!(retried_again.envelope.attempts, 1);
+
+    broker
+        .fail(retried_again.receipt, "done".to_string())
+        .await
+        .unwrap();
+    assert_eq!(broker.len(), 0);
+    let dead = broker.dead_letters();
+    assert_eq!(dead.len(), 1);
+    assert_eq!(dead[0].error, "done");
+}
+
+#[tokio::test]
+async fn expired_receipts_are_rejected_without_mutating_jobs() {
+    let clock = Arc::new(ManualClock::new());
+    let broker = InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(10));
+
+    broker
+        .enqueue(NewJob {
+            kind: "ok".to_string(),
+            payload: b"null".to_vec(),
+            max_attempts: 3,
+        })
+        .await
+        .unwrap();
+
+    let reserved = broker.reserve("default").await.unwrap().expect("a job");
+    clock.advance(Duration::from_secs(11));
+
+    let err = broker.ack(reserved.receipt).await.unwrap_err();
+    assert!(matches!(err, Error::StaleReservation(_)));
+
+    let current = broker.reserve("default").await.unwrap().expect("current");
+    assert_eq!(current.envelope.attempts, 0);
+
+    clock.advance(Duration::from_secs(11));
+    let err = broker
+        .retry(current.receipt, Duration::from_secs(5))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::StaleReservation(_)));
+
+    let current = broker.reserve("default").await.unwrap().expect("current");
+    assert_eq!(current.envelope.attempts, 0);
+
+    clock.advance(Duration::from_secs(11));
+    let err = broker
+        .fail(current.receipt, "stale".to_string())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::StaleReservation(_)));
+    assert!(broker.dead_letters().is_empty());
+}
+
+#[tokio::test]
+async fn superseded_receipt_is_rejected_and_current_receipt_works() {
+    let clock = Arc::new(ManualClock::new());
+    let broker = InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(10));
+
+    broker
+        .enqueue(NewJob {
+            kind: "ok".to_string(),
+            payload: b"null".to_vec(),
+            max_attempts: 3,
+        })
+        .await
+        .unwrap();
+
+    let first = broker.reserve("default").await.unwrap().expect("first");
+    clock.advance(Duration::from_secs(11));
+    let second = broker.reserve("default").await.unwrap().expect("second");
+
+    let err = broker.ack(first.receipt).await.unwrap_err();
+    assert!(matches!(err, Error::StaleReservation(_)));
+
+    broker.ack(second.receipt).await.unwrap();
+    assert_eq!(broker.len(), 0);
+}
+
+#[tokio::test]
+async fn worker_stale_resolution_is_non_fatal() {
+    let clock = Arc::new(ManualClock::new());
+    let broker =
+        Arc::new(InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(10)));
+    let client = Client::new(broker.clone());
+    let mut worker = Worker::new(broker.clone());
+    worker
+        .register(ExpireThenOkJob {
+            clock,
+            advance_by: Duration::from_secs(11),
+        })
+        .unwrap();
+
+    client.enqueue::<ExpireThenOkJob>(Unit).await.unwrap();
+
     assert!(
-        broker.ack(JobId::new()).await.is_err(),
-        "acking an unknown job must error, not silently succeed"
+        worker.process_next().await.unwrap(),
+        "stale ack should not fail the worker"
     );
+    assert_eq!(broker.len(), 1, "stale ack must not remove the job");
+}
+
+#[tokio::test]
+async fn ack_unknown_receipt_is_stale() {
+    let broker = InMemoryBroker::new();
+    let err = broker.ack(ReservationReceipt::new()).await.unwrap_err();
+    assert!(matches!(err, Error::StaleReservation(_)));
 }

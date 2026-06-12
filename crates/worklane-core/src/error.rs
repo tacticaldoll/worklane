@@ -19,6 +19,10 @@ pub enum Error {
     #[error("broker error: {0}")]
     Broker(String),
 
+    /// A reservation receipt is expired, superseded, or unknown.
+    #[error("stale reservation: {0}")]
+    StaleReservation(String),
+
     /// A worker registration was rejected (e.g. a duplicate kind).
     #[error("registration error: {0}")]
     Registration(String),

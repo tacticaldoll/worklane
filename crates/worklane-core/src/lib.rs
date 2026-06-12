@@ -15,7 +15,7 @@ mod payload;
 mod retry;
 
 pub use broker::Broker;
-pub use envelope::{DeadLetter, JobEnvelope, NewJob};
+pub use envelope::{DeadLetter, JobEnvelope, NewJob, Reservation, ReservationReceipt};
 pub use error::{Error, Result};
 pub use id::JobId;
 pub use job::{HandlerError, HandlerResult, Job, JobContext};

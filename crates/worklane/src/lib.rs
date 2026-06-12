@@ -22,5 +22,5 @@ pub use async_trait::async_trait;
 
 pub use worklane_core::{
     Broker, DeadLetter, Error, HandlerError, HandlerResult, Job, JobContext, JobEnvelope, JobId,
-    NewJob, Result, RetryPolicy, from_payload, to_payload,
+    NewJob, Reservation, ReservationReceipt, Result, RetryPolicy, from_payload, to_payload,
 };

@@ -14,7 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use worklane_core::{Broker, DeadLetter, Error, JobEnvelope, JobId, NewJob, Result};
+use worklane_core::{
+    Broker, DeadLetter, Error, JobEnvelope, JobId, NewJob, Reservation, ReservationReceipt, Result,
+};
 
 pub use clock::{Clock, ManualClock, SystemClock};
 
@@ -27,6 +29,8 @@ struct JobState {
     available_at: Duration,
     /// When the current lease expires, if the job is reserved.
     leased_until: Option<Duration>,
+    /// The current receipt, if the job is reserved.
+    receipt: Option<ReservationReceipt>,
 }
 
 struct Inner {
@@ -83,6 +87,35 @@ impl InMemoryBroker {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().expect("broker mutex poisoned")
     }
+
+    fn stale(receipt: ReservationReceipt) -> Error {
+        Error::StaleReservation(format!("receipt {receipt:?} is not current"))
+    }
+
+    fn find_current_receipt(
+        inner: &mut Inner,
+        receipt: ReservationReceipt,
+        now: Duration,
+    ) -> Result<usize> {
+        let Some(pos) = inner
+            .jobs
+            .iter()
+            .position(|job| job.receipt == Some(receipt))
+        else {
+            return Err(Self::stale(receipt));
+        };
+
+        if inner.jobs[pos]
+            .leased_until
+            .is_some_and(|until| until <= now)
+        {
+            inner.jobs[pos].leased_until = None;
+            inner.jobs[pos].receipt = None;
+            return Err(Self::stale(receipt));
+        }
+
+        Ok(pos)
+    }
 }
 
 impl Default for InMemoryBroker {
@@ -107,11 +140,12 @@ impl Broker for InMemoryBroker {
             envelope,
             available_at: now,
             leased_until: None,
+            receipt: None,
         });
         Ok(id)
     }
 
-    async fn reserve(&self, _lane: &str) -> Result<Option<JobEnvelope>> {
+    async fn reserve(&self, _lane: &str) -> Result<Option<Reservation>> {
         let now = self.clock.now();
         let lease_until = now + self.lease;
         let mut inner = self.lock();
@@ -122,6 +156,7 @@ impl Broker for InMemoryBroker {
                 && until <= now
             {
                 job.leased_until = None;
+                job.receipt = None;
             }
         }
 
@@ -132,45 +167,42 @@ impl Broker for InMemoryBroker {
 
         match slot {
             Some(job) => {
+                let receipt = ReservationReceipt::new();
                 job.leased_until = Some(lease_until);
-                Ok(Some(job.envelope.clone()))
+                job.receipt = Some(receipt);
+                Ok(Some(Reservation {
+                    envelope: job.envelope.clone(),
+                    receipt,
+                }))
             }
             None => Ok(None),
         }
     }
 
-    async fn ack(&self, id: JobId) -> Result<()> {
+    async fn ack(&self, receipt: ReservationReceipt) -> Result<()> {
+        let now = self.clock.now();
         let mut inner = self.lock();
-        let pos = inner
-            .jobs
-            .iter()
-            .position(|job| job.envelope.id == id)
-            .ok_or_else(|| Error::Broker(format!("ack: unknown job {id}")))?;
+        let pos = Self::find_current_receipt(&mut inner, receipt, now)?;
         inner.jobs.remove(pos);
         Ok(())
     }
 
-    async fn retry(&self, id: JobId, delay: Duration) -> Result<()> {
+    async fn retry(&self, receipt: ReservationReceipt, delay: Duration) -> Result<()> {
         let now = self.clock.now();
         let mut inner = self.lock();
-        let job = inner
-            .jobs
-            .iter_mut()
-            .find(|job| job.envelope.id == id)
-            .ok_or_else(|| Error::Broker(format!("retry: unknown job {id}")))?;
+        let pos = Self::find_current_receipt(&mut inner, receipt, now)?;
+        let job = &mut inner.jobs[pos];
         job.envelope.attempts += 1;
         job.available_at = now + delay;
         job.leased_until = None;
+        job.receipt = None;
         Ok(())
     }
 
-    async fn fail(&self, id: JobId, error: String) -> Result<()> {
+    async fn fail(&self, receipt: ReservationReceipt, error: String) -> Result<()> {
+        let now = self.clock.now();
         let mut inner = self.lock();
-        let pos = inner
-            .jobs
-            .iter()
-            .position(|job| job.envelope.id == id)
-            .ok_or_else(|| Error::Broker(format!("fail: unknown job {id}")))?;
+        let pos = Self::find_current_receipt(&mut inner, receipt, now)?;
         let job = inner.jobs.remove(pos);
         inner.dead.push(DeadLetter {
             envelope: job.envelope,

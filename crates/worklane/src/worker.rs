@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use worklane_core::{
-    Broker, Error, Job, JobContext, JobEnvelope, JobId, Result, RetryPolicy, from_payload,
+    Broker, Error, Job, JobContext, JobEnvelope, JobId, Reservation, ReservationReceipt, Result,
+    RetryPolicy, from_payload,
 };
 
 /// The default lane a worker reserves from.
@@ -90,7 +91,7 @@ impl Worker {
         };
         match reserved {
             Some(envelope) => {
-                tracing::debug!(lane = %self.lane, job_id = %envelope.id, kind = %envelope.kind, "reserved job");
+                tracing::debug!(lane = %self.lane, job_id = %envelope.envelope.id, kind = %envelope.envelope.kind, "reserved job");
                 self.process(envelope).await?;
                 Ok(true)
             }
@@ -110,7 +111,9 @@ impl Worker {
         Ok(())
     }
 
-    async fn process(&self, envelope: JobEnvelope) -> Result<()> {
+    async fn process(&self, reservation: Reservation) -> Result<()> {
+        let receipt = reservation.receipt;
+        let envelope = reservation.envelope;
         let id = envelope.id;
         let ctx = JobContext {
             id,
@@ -120,38 +123,72 @@ impl Worker {
 
         let Some(dispatch) = self.handlers.get(envelope.kind.as_str()) else {
             tracing::warn!(job_id = %id, kind = %envelope.kind, "no handler; dead-lettering");
-            self.broker
-                .fail(id, format!("unknown job kind: {}", envelope.kind))
-                .await?;
-            return Ok(());
+            return self
+                .resolve(
+                    id,
+                    &envelope.kind,
+                    self.broker
+                        .fail(receipt, format!("unknown job kind: {}", envelope.kind))
+                        .await,
+                )
+                .await;
         };
 
         tracing::info!(job_id = %id, kind = %envelope.kind, attempt = envelope.attempts + 1, "dispatching job");
         match dispatch.dispatch(ctx, &envelope.payload).await {
             Ok(()) => {
                 tracing::info!(job_id = %id, "job succeeded; ack");
-                self.broker.ack(id).await
+                self.resolve(id, &envelope.kind, self.broker.ack(receipt).await)
+                    .await
             }
             Err(Error::Serialization(msg)) => {
                 // The payload will never deserialize; dead-letter immediately.
                 tracing::warn!(job_id = %id, error = %msg, "payload error; dead-lettering");
-                self.broker
-                    .fail(id, format!("serialization error: {msg}"))
-                    .await
+                self.resolve(
+                    id,
+                    &envelope.kind,
+                    self.broker
+                        .fail(receipt, format!("serialization error: {msg}"))
+                        .await,
+                )
+                .await
             }
-            Err(err) => self.handle_failure(id, &envelope, err).await,
+            Err(err) => self.handle_failure(id, receipt, &envelope, err).await,
         }
     }
 
-    async fn handle_failure(&self, id: JobId, envelope: &JobEnvelope, err: Error) -> Result<()> {
+    async fn handle_failure(
+        &self,
+        id: JobId,
+        receipt: ReservationReceipt,
+        envelope: &JobEnvelope,
+        err: Error,
+    ) -> Result<()> {
         let completed = envelope.attempts + 1;
         if completed < envelope.max_attempts {
             let delay = self.retry.delay_for(envelope.attempts);
             tracing::warn!(job_id = %id, attempt = completed, ?delay, error = %err, "job failed; retrying");
-            self.broker.retry(id, delay).await
+            self.resolve(id, &envelope.kind, self.broker.retry(receipt, delay).await)
+                .await
         } else {
             tracing::warn!(job_id = %id, attempt = completed, error = %err, "job failed; dead-lettering");
-            self.broker.fail(id, err.to_string()).await
+            self.resolve(
+                id,
+                &envelope.kind,
+                self.broker.fail(receipt, err.to_string()).await,
+            )
+            .await
+        }
+    }
+
+    async fn resolve(&self, id: JobId, kind: &str, result: Result<()>) -> Result<()> {
+        match result {
+            Ok(()) => Ok(()),
+            Err(Error::StaleReservation(msg)) => {
+                tracing::warn!(job_id = %id, kind = %kind, error = %msg, "resolution rejected as stale; continuing");
+                Ok(())
+            }
+            Err(err) => Err(err),
         }
     }
 }
