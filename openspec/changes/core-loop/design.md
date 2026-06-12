@@ -91,6 +91,12 @@ v0.1 uses a single `"default"` lane. Multiple lanes are backlog.
   in-memory broker so tests advance time deterministically and use small leases.
 - Single sequential loop limits throughput. Mitigation: documented fast-follow;
   the trait does not preclude a concurrent worker later.
+- Resolution (`ack`/`retry`/`fail`) is keyed by `JobId` only, not by a lease
+  token, so it is not validated against the current reservation. This is safe
+  under the single sequential worker (one resolver, no re-reservation), but
+  concurrent workers or durable brokers will need a reservation/receipt token to
+  reject stale or superseded resolutions. Deferred with concurrency (see
+  `BACKLOG.md`).
 
 ## Open Questions
 

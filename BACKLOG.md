@@ -20,6 +20,7 @@ this file is the upstream idea list that feeds `/opsx:propose`.
 - multiple queues / lanes
 - job cancellation
 - unique jobs / deduplication
+- lease receipt tokens (validate ack / retry / fail against the current reservation; needed for concurrent workers and durable brokers)
 - OpenTelemetry integration
 - CLI management tool
 - admin web UI

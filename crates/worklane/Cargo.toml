@@ -7,4 +7,11 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-worklane-core = { path = "../worklane-core" }
+worklane-core = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+worklane-memory = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
