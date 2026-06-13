@@ -5,8 +5,8 @@
 //! acked, retried, or failed before the lease expires (at-least-once delivery).
 //! Time comes from a [`Clock`] seam so tests can advance it deterministically.
 //!
-//! v0.1 uses a single logical lane; the `lane` argument is accepted but not yet
-//! used to partition jobs.
+//! Jobs are partitioned by lane: `reserve(lane)` only returns jobs enqueued to
+//! that lane, and a lane no worker reserves retains its jobs indefinitely.
 
 mod clock;
 
@@ -129,13 +129,7 @@ impl Broker for InMemoryBroker {
     async fn enqueue(&self, job: NewJob) -> Result<JobId> {
         let now = self.clock.now();
         let id = JobId::new();
-        let envelope = JobEnvelope {
-            id,
-            kind: job.kind,
-            payload: job.payload,
-            attempts: 0,
-            max_attempts: job.max_attempts,
-        };
+        let envelope = JobEnvelope::new(id, job.lane, job.kind, job.payload, job.max_attempts);
         self.lock().jobs.push(JobState {
             envelope,
             available_at: now,
@@ -145,7 +139,7 @@ impl Broker for InMemoryBroker {
         Ok(id)
     }
 
-    async fn reserve(&self, _lane: &str) -> Result<Option<Reservation>> {
+    async fn reserve(&self, lane: &str) -> Result<Option<Reservation>> {
         let now = self.clock.now();
         let lease_until = now + self.lease;
         let mut inner = self.lock();
@@ -160,20 +154,17 @@ impl Broker for InMemoryBroker {
             }
         }
 
-        let slot = inner
-            .jobs
-            .iter_mut()
-            .find(|job| job.leased_until.is_none() && job.available_at <= now);
+        // Only consider jobs on the requested lane; other lanes are isolated.
+        let slot = inner.jobs.iter_mut().find(|job| {
+            job.envelope.lane == lane && job.leased_until.is_none() && job.available_at <= now
+        });
 
         match slot {
             Some(job) => {
                 let receipt = ReservationReceipt::new();
                 job.leased_until = Some(lease_until);
                 job.receipt = Some(receipt);
-                Ok(Some(Reservation {
-                    envelope: job.envelope.clone(),
-                    receipt,
-                }))
+                Ok(Some(Reservation::new(job.envelope.clone(), receipt)))
             }
             None => Ok(None),
         }
@@ -204,10 +195,7 @@ impl Broker for InMemoryBroker {
         let mut inner = self.lock();
         let pos = Self::find_current_receipt(&mut inner, receipt, now)?;
         let job = inner.jobs.remove(pos);
-        inner.dead.push(DeadLetter {
-            envelope: job.envelope,
-            error,
-        });
+        inner.dead.push(DeadLetter::new(job.envelope, error));
         Ok(())
     }
 }

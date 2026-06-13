@@ -115,11 +115,7 @@ impl Worker {
         let receipt = reservation.receipt;
         let envelope = reservation.envelope;
         let id = envelope.id;
-        let ctx = JobContext {
-            id,
-            attempts: envelope.attempts,
-            max_attempts: envelope.max_attempts,
-        };
+        let ctx = JobContext::new(id, envelope.attempts, envelope.max_attempts);
 
         let Some(dispatch) = self.handlers.get(envelope.kind.as_str()) else {
             tracing::warn!(job_id = %id, kind = %envelope.kind, "no handler; dead-lettering");

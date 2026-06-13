@@ -12,6 +12,7 @@ pub type HandlerResult = std::result::Result<(), HandlerError>;
 
 /// Per-run context handed to a job handler.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct JobContext {
     /// The job id.
     pub id: JobId,
@@ -19,6 +20,17 @@ pub struct JobContext {
     pub attempts: u32,
     /// The maximum number of attempts allowed.
     pub max_attempts: u32,
+}
+
+impl JobContext {
+    /// Build the per-run context for a dispatched job.
+    pub fn new(id: JobId, attempts: u32, max_attempts: u32) -> Self {
+        JobContext {
+            id,
+            attempts,
+            max_attempts,
+        }
+    }
 }
 
 /// A typed background job.

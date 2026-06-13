@@ -2,6 +2,7 @@ use thiserror::Error;
 
 /// Errors produced by worklane operations.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     /// A payload could not be serialized or deserialized.
     #[error("serialization error: {0}")]

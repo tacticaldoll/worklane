@@ -79,6 +79,19 @@ buy validation/interning room, but that is speculative now; `#[non_exhaustive]`
 on the carrying types preserves the option to introduce it without breaking
 callers. Deferred to BACKLOG.md.
 
+### 6. `#[non_exhaustive]` types get internal constructors (implementation note)
+
+Surfaced during apply: `#[non_exhaustive]` blocks struct-literal construction
+from *other* crates, so the broker (`worklane-memory`), client (`worklane`), and
+tests can no longer write `NewJob { .. }` / `JobEnvelope { .. }`. Each marked
+struct therefore gains a small `::new(..)` constructor in `worklane-core`
+(`NewJob`, `JobEnvelope`, `JobContext`, `Reservation`, `DeadLetter`). These
+constructors are called only within the workspace, so evolving their (positional)
+signatures is our own internal cost; `#[non_exhaustive]` still protects external
+*readers* from field additions, which is the rule's intent. `Error` is an enum,
+so it needs no constructor — existing variants stay constructible and only
+exhaustive matches in downstream crates are affected.
+
 ## Risks / Trade-offs
 
 - **Typo'd or unworked lane silently accumulates jobs** → Deliberate: lanes are

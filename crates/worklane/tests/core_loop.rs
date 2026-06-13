@@ -198,11 +198,7 @@ async fn corrupt_payload_dead_letters_without_panic() {
 
     // Enqueue raw invalid bytes for the echo kind, bypassing the typed client.
     broker
-        .enqueue(NewJob {
-            kind: "echo".to_string(),
-            payload: b"not json".to_vec(),
-            max_attempts: 3,
-        })
+        .enqueue(NewJob::new("default", "echo", b"not json".to_vec(), 3))
         .await
         .unwrap();
 
@@ -220,11 +216,7 @@ async fn lease_expiry_requeues() {
     let broker = InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(10));
 
     let id = broker
-        .enqueue(NewJob {
-            kind: "ok".to_string(),
-            payload: b"null".to_vec(),
-            max_attempts: 3,
-        })
+        .enqueue(NewJob::new("default", "ok", b"null".to_vec(), 3))
         .await
         .unwrap();
 
@@ -251,11 +243,7 @@ async fn valid_receipts_resolve_jobs() {
     let broker = InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(60));
 
     broker
-        .enqueue(NewJob {
-            kind: "ok".to_string(),
-            payload: b"null".to_vec(),
-            max_attempts: 3,
-        })
+        .enqueue(NewJob::new("default", "ok", b"null".to_vec(), 3))
         .await
         .unwrap();
     let acked = broker.reserve("default").await.unwrap().expect("ack job");
@@ -263,11 +251,7 @@ async fn valid_receipts_resolve_jobs() {
     assert_eq!(broker.len(), 0);
 
     broker
-        .enqueue(NewJob {
-            kind: "ok".to_string(),
-            payload: b"null".to_vec(),
-            max_attempts: 3,
-        })
+        .enqueue(NewJob::new("default", "ok", b"null".to_vec(), 3))
         .await
         .unwrap();
     let retried = broker.reserve("default").await.unwrap().expect("retry job");
@@ -296,11 +280,7 @@ async fn expired_receipts_are_rejected_without_mutating_jobs() {
     let broker = InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(10));
 
     broker
-        .enqueue(NewJob {
-            kind: "ok".to_string(),
-            payload: b"null".to_vec(),
-            max_attempts: 3,
-        })
+        .enqueue(NewJob::new("default", "ok", b"null".to_vec(), 3))
         .await
         .unwrap();
 
@@ -338,11 +318,7 @@ async fn superseded_receipt_is_rejected_and_current_receipt_works() {
     let broker = InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(10));
 
     broker
-        .enqueue(NewJob {
-            kind: "ok".to_string(),
-            payload: b"null".to_vec(),
-            max_attempts: 3,
-        })
+        .enqueue(NewJob::new("default", "ok", b"null".to_vec(), 3))
         .await
         .unwrap();
 
