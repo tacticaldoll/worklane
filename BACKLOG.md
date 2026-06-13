@@ -4,6 +4,27 @@ Future features intentionally **excluded from v0.1** unless absolutely necessary
 Active work and the MVP are tracked as OpenSpec changes under `openspec/changes/`;
 this file is the upstream idea list that feeds `/opsx:propose`.
 
+## Near-term sequencing (foundations before polish)
+
+The agreed order for upcoming changes. Each step de-risks the next; the deferred
+items below wait behind these foundations.
+
+1. **`add-broker-contract-tests`** — a reusable, broker-agnostic conformance
+   suite derived from the broker spec. The harness that lets any backend *prove*
+   it honours the contract; likely where a shared time seam (`TimeSource` in
+   `worklane-core`) is introduced so time-based scenarios are deterministic
+   across brokers.
+2. **`add-worker-poll-loop`** — long-running daemon loop with cooperative
+   graceful shutdown, built on `process_next`. Records (does not fix) that a
+   long-running worker more easily exposes lease-too-short / handler-too-long.
+3. **first durable broker** — runs the contract suite to validate the `Broker`
+   trait *without changing it* (the decoupling milestone).
+4. **concurrent worker** — N concurrent handlers; first real lease contention.
+5. **lease extension / renewal** — heartbeat to hold a reservation past the
+   lease for long handlers. Deliberately last: it adds a `Broker` trait method
+   (defer until the trait is durable-validated) and needs a durable backend and
+   concurrency to test real contention.
+
 ## Deferred (post-v0.1)
 
 - Redis broker
@@ -35,9 +56,12 @@ extensions are intentionally deferred:
 - a `Lane` newtype with validation / interning (v0.1 uses a bare `String`)
 - lane typo protection / registration — until then, jobs on a lane no worker
   reserves accumulate silently (deliberately an operator responsibility)
-- multi-lane worker / fair scheduling across lanes
+- multi-lane worker / fair scheduling across lanes (real payoff needs the
+  concurrent worker in step 4 above; sequential fair scheduling would be a toy)
 
 ## Guiding principle
 
-Protect the core loop. Everything above is out of scope until the core
-enqueue → reserve → dispatch → ack / retry / fail / dead-letter loop is solid.
+Protect the core loop. Every **deferred** item above is out of scope until the
+core enqueue → reserve → dispatch → ack / retry / fail / dead-letter loop is
+solid. The near-term sequencing is the active path toward that solidity, not
+deferred work.
