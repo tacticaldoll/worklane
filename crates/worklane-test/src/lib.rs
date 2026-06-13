@@ -60,6 +60,10 @@ macro_rules! broker_contract_required {
         async fn contract_unknown_receipt_rejected() {
             $crate::scenarios::unknown_receipt_rejected(&$harness).await;
         }
+        #[::tokio::test]
+        async fn contract_enqueue_preserves_envelope_fields() {
+            $crate::scenarios::enqueue_preserves_envelope_fields(&$harness).await;
+        }
     };
 }
 

@@ -59,6 +59,29 @@ extensions are intentionally deferred:
 - multi-lane worker / fair scheduling across lanes (real payoff needs the
   concurrent worker in step 4 above; sequential fair scheduling would be a toy)
 
+### Durable-broker follow-ups (after `add-sqlite-broker`)
+
+The first durable broker (`worklane-sqlite`) validated the `Broker` trait
+unchanged; these refinements it surfaced are intentionally deferred until a real
+consumer needs them:
+
+- `reserve` ordering: the broker spec is silent on which of several visible
+  same-lane jobs is returned. `worklane-sqlite` uses `ORDER BY seq` (FIFO) as an
+  *unspecified* implementation choice; promoting strict FIFO to the contract is
+  deferred because the deferred priority-queue feature would reorder.
+- `JobEnvelope::from_stored` + a columnar schema: `worklane-sqlite` stores the
+  envelope as a serde blob to avoid any core change. A columnar backend
+  (Postgres) is the first real consumer that benefits from an additive
+  envelope-reconstruction constructor and individually queryable columns.
+- restart-durable clock: `SystemClock` is monotonic and process-local, so
+  persisted absolute times are meaningless across a process restart. A
+  production durable broker needs a stable wall-clock-epoch clock; the broker is
+  correct with respect to whatever clock it is given.
+- connection pool / concurrent connections: `worklane-sqlite` uses a single
+  connection behind a `Mutex`. Real connection concurrency belongs with the
+  concurrent-worker step.
+- schema versioning via `PRAGMA user_version`, once the schema must evolve.
+
 ## Guiding principle
 
 Protect the core loop. Every **deferred** item above is out of scope until the

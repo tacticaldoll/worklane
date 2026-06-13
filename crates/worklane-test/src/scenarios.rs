@@ -125,6 +125,34 @@ pub async fn unknown_receipt_rejected<H: BrokerContractHarness>(h: &H) {
     );
 }
 
+/// Every envelope field survives storage and is returned unchanged by
+/// `reserve`, including the opaque payload bytes (here non-UTF-8). An in-memory
+/// broker satisfies this by identity; a durable broker via a storage round-trip.
+pub async fn enqueue_preserves_envelope_fields<H: BrokerContractHarness>(h: &H) {
+    let b = h.broker();
+    // Arbitrary, deliberately non-UTF-8 bytes.
+    let payload = vec![0u8, 159, 146, 150, 255, 0, 1, 2, 254];
+    b.enqueue(NewJob::new("critical", "send_email", payload.clone(), 7))
+        .await
+        .unwrap();
+    let r = b
+        .reserve("critical")
+        .await
+        .unwrap()
+        .expect("enqueued job should be reservable");
+    assert_eq!(r.envelope.lane, "critical", "lane must be preserved");
+    assert_eq!(r.envelope.kind, "send_email", "kind must be preserved");
+    assert_eq!(
+        r.envelope.payload, payload,
+        "payload bytes must survive storage verbatim"
+    );
+    assert_eq!(r.envelope.max_attempts, 7, "max_attempts must be preserved");
+    assert_eq!(
+        r.envelope.attempts, 0,
+        "first reservation has zero prior attempts"
+    );
+}
+
 // --- Timed tier: requires advancing the injected clock --------------------
 
 /// Retry with a positive delay hides the job until the delay elapses, then

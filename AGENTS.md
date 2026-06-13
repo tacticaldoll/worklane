@@ -141,6 +141,11 @@ load-bearing abstraction; protect its portability.
 - Do not treat the trait as stable until it has been validated against at least
   one durable backend without changing it. A required trait change is a signal
   to revise the contract while it is still cheap.
+  - *Validated:* as of `add-sqlite-broker`, the `worklane-sqlite` durable broker
+    passes the full `worklane-test` conformance suite (both tiers) with the
+    `Broker` trait and every `worklane-core` type unchanged — the first
+    durable-backend confirmation that the contract is portable, not
+    in-memory-shaped.
 
 ## Language
 
