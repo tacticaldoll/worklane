@@ -94,6 +94,11 @@ General and meant to outlast any specific module. The concrete gates below
   stay behind the implementation — surfaced through a per-implementation adapter
   when tests or callers need them, never promoted onto the contract. A minimal
   contract is what keeps implementations substitutable and changes non-breaking.
+  - *In practice:* when building shared infrastructure, sort the existing code by
+    kind — lift what every implementation must honour up into the shared layer,
+    keep conveniences down behind the implementation — and prove the sort with a
+    reusable conformance suite that asserts only through the contract plus a
+    per-implementation adapter, so conveniences cannot leak back in.
 
 - **Separate knowledge by its kind.** What the system *does* (behaviour), *how*
   we build and evolve it (process, discipline), and what we have chosen *not to
@@ -106,9 +111,6 @@ General and meant to outlast any specific module. The concrete gates below
   it and let the next use test it; promote it to a rule here only when it has
   held across more than one change. This applies to these rules themselves —
   govern slowly, from practice, not from a single good idea.
-  - _Pending:_ the lift/sink structural sort and the conformance-harness /
-    adapter pattern (from `establish-broker-contract`) are hypotheses awaiting
-    that change; codify once proven.
 
 ## API stability and evolution
 
