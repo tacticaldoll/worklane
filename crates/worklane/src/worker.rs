@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use worklane_core::{
@@ -9,6 +11,9 @@ use worklane_core::{
 
 /// The default lane a worker reserves from.
 pub const DEFAULT_LANE: &str = "default";
+
+/// The default idle poll interval for [`Worker::run`].
+pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Type-erased handler dispatch: deserialize the payload and run the handler.
 #[async_trait]
@@ -37,6 +42,7 @@ pub struct Worker {
     handlers: HashMap<&'static str, Box<dyn Dispatch>>,
     retry: RetryPolicy,
     lane: String,
+    poll_interval: Duration,
 }
 
 impl Worker {
@@ -47,6 +53,7 @@ impl Worker {
             handlers: HashMap::new(),
             retry: RetryPolicy::default(),
             lane: DEFAULT_LANE.to_string(),
+            poll_interval: DEFAULT_POLL_INTERVAL,
         }
     }
 
@@ -59,6 +66,12 @@ impl Worker {
     /// Set the lane to reserve from (builder style).
     pub fn with_lane(mut self, lane: impl Into<String>) -> Self {
         self.lane = lane.into();
+        self
+    }
+
+    /// Set the idle poll interval used by [`run`](Self::run) (builder style).
+    pub fn with_poll_interval(mut self, poll_interval: Duration) -> Self {
+        self.poll_interval = poll_interval;
         self
     }
 
@@ -105,10 +118,48 @@ impl Worker {
     /// Process jobs until no job is currently available.
     ///
     /// Note: jobs scheduled for the future (e.g. pending retries) are not waited
-    /// for. A long-running, polling worker loop is a planned follow-up.
+    /// for. For a long-running daemon that does wait, use [`run`](Self::run).
     pub async fn run_until_idle(&self) -> Result<()> {
         while self.process_next().await? {}
         Ok(())
+    }
+
+    /// Run as a long-lived daemon: process every available job, then wait the
+    /// configured poll interval when idle and check again, until `shutdown`
+    /// resolves.
+    ///
+    /// Shutdown is cooperative: it is only honoured between jobs, so a job whose
+    /// handler is already running always completes and is resolved (ack / retry /
+    /// fail) before `run` returns. Dropping the returned future instead (a hard
+    /// cancel) may leave an in-flight job unresolved; it is redelivered later
+    /// under at-least-once delivery.
+    pub async fn run(&self, shutdown: impl Future<Output = ()>) -> Result<()> {
+        tokio::pin!(shutdown);
+        loop {
+            // Honour shutdown between jobs: a biased, non-blocking probe that
+            // never cancels an in-flight job (the job runs outside any select).
+            tokio::select! {
+                biased;
+                _ = &mut shutdown => {
+                    tracing::debug!(lane = %self.lane, "shutdown signalled; stopping run loop");
+                    return Ok(());
+                }
+                _ = std::future::ready(()) => {}
+            }
+            // Process one job to completion if any is available.
+            if self.process_next().await? {
+                continue;
+            }
+            // Idle: wait for the next poll tick, or stop if asked to shut down.
+            tokio::select! {
+                biased;
+                _ = &mut shutdown => {
+                    tracing::debug!(lane = %self.lane, "shutdown signalled while idle; stopping run loop");
+                    return Ok(());
+                }
+                _ = tokio::time::sleep(self.poll_interval) => {}
+            }
+        }
     }
 
     async fn process(&self, reservation: Reservation) -> Result<()> {

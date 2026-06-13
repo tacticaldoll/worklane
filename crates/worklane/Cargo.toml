@@ -10,9 +10,10 @@ authors.workspace = true
 worklane-core = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 worklane-memory = { workspace = true }
 worklane-test = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync", "test-util"] }
 serde = { workspace = true }
