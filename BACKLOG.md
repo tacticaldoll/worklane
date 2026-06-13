@@ -6,24 +6,25 @@ this file is the upstream idea list that feeds `/opsx:propose`.
 
 ## Near-term sequencing (foundations before polish)
 
-The agreed order for upcoming changes. Each step de-risks the next; the deferred
-items below wait behind these foundations.
+The agreed order of foundational changes; each de-risks the next. Steps 1–4 have
+shipped (details in `openspec/changes/archive/`); step 5 is the live next item.
 
-1. **`add-broker-contract-tests`** — a reusable, broker-agnostic conformance
-   suite derived from the broker spec. The harness that lets any backend *prove*
-   it honours the contract; likely where a shared time seam (`TimeSource` in
-   `worklane-core`) is introduced so time-based scenarios are deterministic
-   across brokers.
-2. **`add-worker-poll-loop`** — long-running daemon loop with cooperative
-   graceful shutdown, built on `process_next`. Records (does not fix) that a
-   long-running worker more easily exposes lease-too-short / handler-too-long.
-3. **first durable broker** — runs the contract suite to validate the `Broker`
-   trait *without changing it* (the decoupling milestone).
-4. **concurrent worker** — N concurrent handlers; first real lease contention.
-5. **lease extension / renewal** — heartbeat to hold a reservation past the
-   lease for long handlers. Deliberately last: it adds a `Broker` trait method
-   (defer until the trait is durable-validated) and needs a durable backend and
-   concurrency to test real contention.
+1. ✓ **`add-broker-contract-tests`** (shipped as `establish-broker-contract`) —
+   reusable broker-agnostic conformance suite derived from the broker spec;
+   lifted the `Clock` seam into `worklane-core` for deterministic time.
+2. ✓ **`add-worker-poll-loop`** — long-running daemon loop with cooperative
+   shutdown, built on `process_next`; recorded (did not fix) lease-too-short /
+   handler-too-long.
+3. ✓ **`add-sqlite-broker`** (first durable broker) — ran the contract suite to
+   validate the `Broker` trait *without changing it* (the decoupling milestone).
+4. ✓ **`add-concurrent-worker`** — in-task bounded concurrency (`with_concurrency`);
+   made lease-too-short real and tested (a handler outliving its lease is
+   redelivered and runs twice, at-least-once).
+5. ⏭ **lease extension / renewal** (next) — heartbeat to hold a reservation past
+   the lease for long handlers. Adds a `Broker` trait method — the first change
+   to the trait since it was durable-validated — and now has both a durable
+   backend and concurrency to test real contention. See "Concurrent-worker
+   follow-ups" below for the motivation surfaced by step 4.
 
 ## Deferred (post-v0.1)
 
