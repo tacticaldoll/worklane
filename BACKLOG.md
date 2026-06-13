@@ -17,14 +17,25 @@ this file is the upstream idea list that feeds `/opsx:propose`.
 - batch jobs
 - rate limiting
 - per-job concurrency limit
-- multiple queues / lanes
 - job cancellation
 - unique jobs / deduplication
-- lease receipt tokens (validate ack / retry / fail against the current reservation; needed for concurrent workers and durable brokers)
 - OpenTelemetry integration
 - CLI management tool
 - admin web UI
 - distributed scheduler
+
+### Lane follow-ups (after `add-lane-partitioning`)
+
+First-class lane assignment ships in the `add-lane-partitioning` change; these
+extensions are intentionally deferred:
+
+- per-call lane override (e.g. `enqueue_to(lane, …)`); v0.1 sets the lane
+  per-client via `Client::with_lane`
+- expose the lane to handlers via `JobContext.lane`
+- a `Lane` newtype with validation / interning (v0.1 uses a bare `String`)
+- lane typo protection / registration — until then, jobs on a lane no worker
+  reserves accumulate silently (deliberately an operator responsibility)
+- multi-lane worker / fair scheduling across lanes
 
 ## Guiding principle
 
