@@ -79,6 +79,35 @@ earliest:
 Do not add concurrency or durable-broker scope merely because a correctness
 foundation enables it. Keep the enabling contract change separate and small.
 
+## API stability and evolution
+
+The public API is a long-term promise; favor changes that can grow without
+breaking callers.
+
+- Public types expected to gain fields or variants — `JobEnvelope`, `NewJob`,
+  `JobContext`, `Reservation`, `DeadLetter`, and `Error` — MUST be
+  `#[non_exhaustive]`.
+- New fields and variants SHALL be added additively. Removing or renaming a
+  public field, variant, method, or trait item is a breaking change that
+  requires a major-version bump and an ADR recording the rationale.
+- `JobEnvelope` is the durable, on-the-wire job format. Treat any field added to
+  it as part of the storage contract every present and future broker must carry.
+
+## Broker design gate
+
+The `Broker` trait is the load-bearing abstraction; protect its portability.
+
+- Any change to the `Broker` trait MUST be answerable as a SQL or Redis
+  implementation (e.g. "how would Postgres do this with
+  `SELECT … FOR UPDATE SKIP LOCKED`?"). Capture that answer in the change's
+  `design.md`.
+- Do not add methods only an in-memory broker can satisfy: returning live
+  references into broker state, requiring a full scan of all jobs, or assuming
+  synchronous visibility.
+- Do not treat the trait as stable until it has been validated against at least
+  one durable backend without changing it. A required trait change is a signal
+  to revise the contract while it is still cheap.
+
 ## Language
 
 - Write all OpenSpec artifacts (specs, proposals, designs, tasks) and code
