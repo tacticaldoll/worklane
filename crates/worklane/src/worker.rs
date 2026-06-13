@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use worklane_core::{
     Broker, Error, Job, JobContext, JobEnvelope, JobId, Reservation, ReservationReceipt, Result,
     RetryPolicy, from_payload,
@@ -36,13 +37,15 @@ impl<J: Job> Dispatch for JobDispatcher<J> {
     }
 }
 
-/// Runs registered job handlers, processing one job at a time.
+/// Runs registered job handlers, processing up to a configured concurrency of
+/// jobs at a time (default 1, i.e. strictly sequential).
 pub struct Worker {
     broker: Arc<dyn Broker>,
     handlers: HashMap<&'static str, Box<dyn Dispatch>>,
     retry: RetryPolicy,
     lane: String,
     poll_interval: Duration,
+    concurrency: usize,
 }
 
 impl Worker {
@@ -54,6 +57,7 @@ impl Worker {
             retry: RetryPolicy::default(),
             lane: DEFAULT_LANE.to_string(),
             poll_interval: DEFAULT_POLL_INTERVAL,
+            concurrency: 1,
         }
     }
 
@@ -72,6 +76,14 @@ impl Worker {
     /// Set the idle poll interval used by [`run`](Self::run) (builder style).
     pub fn with_poll_interval(mut self, poll_interval: Duration) -> Self {
         self.poll_interval = poll_interval;
+        self
+    }
+
+    /// Set the maximum number of jobs processed concurrently by
+    /// [`run`](Self::run) (builder style). Defaults to 1 (strictly sequential).
+    /// A value of 0 is treated as 1 so the worker always makes progress.
+    pub fn with_concurrency(mut self, concurrency: usize) -> Self {
+        self.concurrency = concurrency.max(1);
         self
     }
 
@@ -124,41 +136,99 @@ impl Worker {
         Ok(())
     }
 
-    /// Run as a long-lived daemon: process every available job, then wait the
+    /// Run as a long-lived daemon: process available jobs, then wait the
     /// configured poll interval when idle and check again, until `shutdown`
-    /// resolves.
+    /// resolves. Up to [`with_concurrency`](Self::with_concurrency) jobs are
+    /// processed at once (default 1, strictly sequential).
     ///
-    /// Shutdown is cooperative: it is only honoured between jobs, so a job whose
-    /// handler is already running always completes and is resolved (ack / retry /
-    /// fail) before `run` returns. Dropping the returned future instead (a hard
-    /// cancel) may leave an in-flight job unresolved; it is redelivered later
-    /// under at-least-once delivery.
+    /// Concurrency is in-task: up to N `reserve -> dispatch -> resolve` futures
+    /// run interleaved on this task (handlers overlap at their await points).
+    ///
+    /// Shutdown is cooperative: it is only honoured between reservations, so
+    /// every in-flight handler always completes and is resolved (ack / retry /
+    /// fail) before `run` returns — all in-flight jobs are drained. Dropping the
+    /// returned future instead (a hard cancel) may leave in-flight jobs
+    /// unresolved; they are redelivered later under at-least-once delivery.
+    ///
+    /// If a job's resolution hits a non-stale broker error, the worker stops
+    /// reserving, drains the in-flight jobs, and returns the first such error.
     pub async fn run(&self, shutdown: impl Future<Output = ()>) -> Result<()> {
         tokio::pin!(shutdown);
+        let concurrency = self.concurrency.max(1);
+        let mut in_flight = futures_util::stream::FuturesUnordered::new();
+        let mut shutting_down = false;
+        let mut first_err: Option<Error> = None;
+
         loop {
-            // Honour shutdown between jobs: a biased, non-blocking probe that
-            // never cancels an in-flight job (the job runs outside any select).
-            tokio::select! {
-                biased;
-                _ = &mut shutdown => {
-                    tracing::debug!(lane = %self.lane, "shutdown signalled; stopping run loop");
-                    return Ok(());
+            // Observe a shutdown (non-blocking) before reserving more work, so a
+            // signal that fired during a job — including from within a handler —
+            // stops us between jobs.
+            if !shutting_down {
+                tokio::select! {
+                    biased;
+                    _ = &mut shutdown => shutting_down = true,
+                    _ = std::future::ready(()) => {}
                 }
-                _ = std::future::ready(()) => {}
             }
-            // Process one job to completion if any is available.
-            if self.process_next().await? {
+
+            // Fill spare capacity by reserving more jobs, unless shutting down.
+            while !shutting_down && in_flight.len() < concurrency {
+                match self.broker.reserve(&self.lane).await {
+                    Ok(Some(reservation)) => {
+                        tracing::debug!(lane = %self.lane, job_id = %reservation.envelope.id, kind = %reservation.envelope.kind, "reserved job");
+                        in_flight.push(self.process(reservation));
+                    }
+                    Ok(None) => break, // no currently-available job on this lane
+                    Err(err) => {
+                        tracing::error!(lane = %self.lane, error = %err, "reserve failed");
+                        first_err.get_or_insert(err);
+                        shutting_down = true;
+                    }
+                }
+            }
+
+            // Nothing in flight: stop if shutting down, else idle-wait for work.
+            if in_flight.is_empty() {
+                if shutting_down {
+                    break;
+                }
+                tokio::select! {
+                    biased;
+                    _ = &mut shutdown => shutting_down = true,
+                    _ = tokio::time::sleep(self.poll_interval) => {}
+                }
                 continue;
             }
-            // Idle: wait for the next poll tick, or stop if asked to shut down.
+
+            // Draining: await in-flight completions only, reserve no more.
+            if shutting_down {
+                if let Some(result) = in_flight.next().await
+                    && let Err(err) = result
+                {
+                    first_err.get_or_insert(err);
+                }
+                continue;
+            }
+
+            // Running: wait for a job to finish, a shutdown, or — if we have
+            // spare capacity — a poll tick to re-check the lane for new work.
+            let have_capacity = in_flight.len() < concurrency;
             tokio::select! {
                 biased;
-                _ = &mut shutdown => {
-                    tracing::debug!(lane = %self.lane, "shutdown signalled while idle; stopping run loop");
-                    return Ok(());
+                _ = &mut shutdown => shutting_down = true,
+                result = in_flight.next() => {
+                    if let Some(Err(err)) = result {
+                        first_err.get_or_insert(err);
+                        shutting_down = true;
+                    }
                 }
-                _ = tokio::time::sleep(self.poll_interval) => {}
+                _ = tokio::time::sleep(self.poll_interval), if have_capacity => {}
             }
+        }
+
+        match first_err {
+            Some(err) => Err(err),
+            None => Ok(()),
         }
     }
 

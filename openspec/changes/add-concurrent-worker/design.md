@@ -21,6 +21,8 @@ contract is strong).
 - No `Broker` trait change and no `worklane-core` change.
 
 **Non-Goals:**
+- Multi-core parallelism (this delivers in-task concurrency; a spawn-based
+  parallel executor is deferred to BACKLOG).
 - Multi-lane / fair scheduling across lanes (a lane follow-up this unlocks but
   does not deliver).
 - Lease extension/renewal (step 5) — this change only makes the lease-too-short
@@ -30,32 +32,42 @@ contract is strong).
 
 ## Decisions
 
-### 1. Model A — a pool of N independent loops, not a reserve+dispatch pool
+### 1. Bounded in-flight with no queue (Model A shape)
 
-Spawn N tasks, each running its own reserve→dispatch→resolve loop over a shared
-`Arc<Worker>`. Each task holds at most one job, so **in-flight is bounded by N
-automatically, with no queue and no semaphore**.
+Up to N `reserve → dispatch → resolve` units run at once; a new job is reserved
+only when there is free capacity, so **in-flight is bounded by N automatically,
+with no queue and no semaphore**. This reuses the already-durable-validated
+`process`/`resolve` path verbatim.
 
 *Alternative considered — Model B (one reserve loop fanning jobs to a bounded
-dispatch pool via `Semaphore` + `JoinSet`):* rejected. Its only advantage over A
-is backpressure on an unbounded queue — but A has no queue (a task only reserves
-when it is free), so B's semaphore solves a problem A does not have. A also
-reuses the already-durable-validated `process`/`resolve` path verbatim. B's real
-consumer is a future network broker where idle empty-reserves are expensive
-(Decision 5); revisit B then.
+dispatch pool via a `Semaphore`):* rejected. Its only advantage is backpressure
+on an unbounded queue — but there is no queue here (we reserve only when free),
+so the semaphore solves a problem this design does not have. B's real consumer
+is a future network broker where idle empty-reserves are expensive (Decision 5).
 
-### 2. True parallelism via `tokio::spawn` over `Arc<Worker>`
+### 2. In-task concurrency via `FuturesUnordered`, not spawned tasks
 
-Each loop runs as a spawned task (real parallelism for CPU- and IO-bound
-handlers), which requires `'static` + `Send`, so `run` takes `self: Arc<Self>`
-(or an inner Arc). `Worker`'s fields already suit sharing: `broker:
-Arc<dyn Broker>`, handlers are `Box<dyn Dispatch>` (`Send + Sync`) behind the
-struct, and the rest are cheap and immutable during `run`.
+The N units are `self.process(reservation)` futures driven concurrently on
+`run`'s own task with `futures_util::stream::FuturesUnordered`; `run` stays
+`&self`. They interleave at await points — concurrency, not multi-core
+parallelism.
 
-*Alternative considered — `join_all` of N borrowing futures on one task:* gives
-concurrency but not parallelism (a CPU-bound handler blocks the others on one
-thread). For a job runner, true parallelism is the point; the `Arc<Worker>`
-restructure is small.
+*Why not `tokio::spawn` N tasks for true parallelism (the earlier draft):*
+implementation showed it makes shutdown and draining **cross-task and
+non-deterministic** — a shutdown fired from within a handler isn't observed
+before the next reservation without scheduler hacks, and the existing poll-loop
+tests (which assume a job drains within one task poll) break. Spawning also
+forces `run` to `self: Arc<Self>`. In-task concurrency keeps `run(&self)`,
+preserves every existing test verbatim, observes shutdown synchronously, and
+drains deterministically. The cost is no CPU parallelism, which a *first*
+concurrent worker does not need (background jobs are usually IO-bound, and the
+lease contention step 4 targets comes from overlap, not from cores). Multi-core
+parallelism — a spawn-based executor, or users running several `run()` futures
+on a multi-thread runtime — is recorded in BACKLOG.
+
+*Cost:* adds the `futures-util` dependency (home of `FuturesUnordered`); tokio
+has no in-task equivalent. This supersedes the proposal's "no new dependency"
+aim, accepted in exchange for the determinism and `&self` simplicity above.
 
 ### 3. `with_concurrency(n)`, default 1; only `run` is concurrent
 
@@ -65,15 +77,15 @@ existing worker-spec scenario and facade test stays green unchanged.
 `process_next` and `run_until_idle` remain sequential — they are the unit-test
 primitives and the building block each loop calls.
 
-### 4. Shutdown: fan one signal out to N loops, then drain
+### 4. Shutdown: polled in-task at the top of the loop, then drain
 
-The public `run(shutdown: impl Future<Output = ()>)` signature is unchanged. A
-single `impl Future` cannot be awaited by N tasks, so internally a small task
-awaits it and flips a `tokio::sync::watch<bool>` that every loop observes (no new
-dependency; `watch` latches, so a late-started loop still sees shutdown). Each
-loop honours shutdown **between jobs** (never cancelling a running handler), so
-on shutdown the loops stop reserving and `run` joins all N tasks — every
-in-flight job runs to completion and resolves first. This is the N-job
+The public `run(shutdown: impl Future<Output = ()>)` signature is unchanged.
+Because `run` is a single task, it polls the pinned shutdown future directly with
+a non-blocking biased probe at the top of each loop iteration — so a signal
+(including one fired from within a handler) is observed **between reservations**,
+deterministically, with no cross-task latency. On shutdown the loop stops
+reserving and awaits the `FuturesUnordered` to empty — every in-flight job runs
+to completion and resolves before `run` returns. This is the N-job
 generalization of today's cooperative, between-jobs shutdown.
 
 ### 5. No connection pool: handlers run outside the broker lock
@@ -117,11 +129,12 @@ in BACKLOG, not folded in.
 ## Migration Plan
 
 Pre-release. Order: (1) add `concurrency` field + `with_concurrency`; (2)
-restructure `run` to spawn N loops over `Arc<Worker>` with a `watch` shutdown
-fan-out and drain-join; (3) confirm N=1 keeps every existing worker scenario
-green; (4) add concurrency tests (bounded in-flight; drains N on shutdown;
-lease-too-short redelivery is stale-rejected) on the in-memory broker with a
-manual clock; (5) DoD; (6) record BACKLOG follow-ons. Rollback = revert.
+restructure `run` to drive up to N `process` futures in-task via
+`FuturesUnordered`, with a top-of-loop shutdown probe and a drain phase; (3)
+confirm N=1 keeps every existing worker scenario green; (4) add concurrency tests
+(bounded in-flight; drains N on shutdown; lease-too-short redelivery is
+stale-rejected) on the in-memory broker with a manual clock; (5) DoD; (6) record
+BACKLOG follow-ons. Rollback = revert.
 
 ## Open Questions
 

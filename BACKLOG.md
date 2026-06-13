@@ -82,6 +82,28 @@ consumer needs them:
   concurrent-worker step.
 - schema versioning via `PRAGMA user_version`, once the schema must evolve.
 
+### Concurrent-worker follow-ups (after `add-concurrent-worker`)
+
+`Worker::run` ships **in-task** bounded concurrency (up to N overlapping handler
+futures on one task via `FuturesUnordered`). These were deliberately deferred:
+
+- multi-core parallelism: in-task concurrency overlaps IO-bound handlers but does
+  not use multiple cores. A spawn-based parallel executor (or simply running
+  several `run()` futures on a multi-thread runtime) is deferred until a
+  CPU-bound workload needs it; it was rejected for the first cut because spawning
+  made shutdown/drain non-deterministic (see the change's design Decision 2).
+- idle re-reserve cadence: moot for the single-task model, but a future
+  spawn-based or network-broker design must avoid N idle workers each polling an
+  empty lane (a single-reserver / shared idle wake).
+- resilient daemon: `run` currently fails fast on a non-stale broker error
+  (drains, then returns it). A "log and keep running" mode is a separate
+  behavioural decision, deferred.
+- lease extension / renewal (sequencing step 5): now motivated — under
+  concurrency a handler outliving its lease is redelivered and runs twice
+  (at-least-once); a heartbeat to hold the lease is the mitigation.
+- multi-lane / fair scheduling across lanes: unlocked by concurrency (see the
+  lane follow-ups above), still deferred.
+
 ## Guiding principle
 
 Protect the core loop. Every **deferred** item above is out of scope until the

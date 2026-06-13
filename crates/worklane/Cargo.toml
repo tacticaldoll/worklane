@@ -11,6 +11,7 @@ worklane-core = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+futures-util = { workspace = true }
 
 [dev-dependencies]
 worklane-memory = { workspace = true }

@@ -11,19 +11,27 @@ step 5 (lease extension).
 
 ## What Changes
 
-- Add bounded concurrency to `Worker::run`: a pool of N independent
-  reserve→dispatch→resolve loops (Model A) spawned over `Arc<Worker>`, each
-  holding at most one job, so in-flight is bounded by N with no extra queue.
+- Add bounded concurrency to `Worker::run`: up to N `reserve → dispatch →
+  resolve` futures run **in-task** via a `futures_util::FuturesUnordered`, each
+  holding at most one job, so in-flight is bounded by N with no extra queue. (An
+  earlier draft spawned N tasks for true parallelism; implementation showed that
+  made shutdown/drain non-deterministic and broke the existing poll-loop tests,
+  so the model is in-task concurrency — see design Decision 2. Multi-core
+  parallelism is deferred to BACKLOG.)
 - Add `Worker::with_concurrency(n)` (builder); **default 1**, which stays
-  strictly sequential and byte-for-byte equivalent to today. `process_next` and
-  `run_until_idle` remain sequential test primitives, unchanged.
-- Keep the public `run(shutdown: impl Future)` signature; fan the single
-  shutdown signal out to N loops internally via a `tokio::sync::watch` (no new
-  dependency). Shutdown drains **all** in-flight jobs to resolution before `run`
-  returns (the N-job generalization of today's cooperative shutdown).
-- Error handling under concurrency: a non-stale fatal error from any loop signals
-  the others to stop, drains in-flight, and returns the first error (fail-fast
-  but drain) — the faithful generalization of today's `?` propagation.
+  strictly sequential and equivalent to today. `process_next` and
+  `run_until_idle` remain sequential test primitives, unchanged; `run` keeps its
+  `&self` signature.
+- Keep the public `run(shutdown: impl Future)` signature. Because `run` is one
+  task, it polls the shutdown future directly at the top of each loop, so a
+  signal — including one fired from within a handler — is observed
+  deterministically between reservations. Shutdown drains **all** in-flight jobs
+  to resolution before `run` returns (the N-job generalization of today's
+  cooperative shutdown).
+- Error handling under concurrency: a non-stale fatal error from a job's
+  resolution stops further reserving, drains in-flight, and returns the first
+  error (fail-fast but drain) — the faithful generalization of today's `?`
+  propagation.
 - No `Broker` trait change and no `worklane-core` change: concurrent reserve is
   just N calls to the existing `reserve`. The SQLite connection needs no pool —
   handlers run outside the broker lock, so only the brief reserve/resolve calls
@@ -59,7 +67,7 @@ network broker, which does not exist yet).
   spawn N loops over `Arc<Worker>` and drain on shutdown.
 - **Public API (additive):** `Worker::with_concurrency(n)`; `run`/`process_next`
   signatures unchanged.
-- **Dependencies:** none added (`tokio::sync::watch` is already available).
+- **Dependencies:** adds `futures-util` (for `FuturesUnordered`) to the facade.
 - **`worklane-core` / `Broker` trait:** unchanged.
 - **`openspec/specs/worker`:** modified requirements (processing loop, poll loop,
   cooperative shutdown) at sync time; no requirement removed.
