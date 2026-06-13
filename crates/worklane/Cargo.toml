@@ -13,5 +13,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 worklane-memory = { workspace = true }
+worklane-test = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

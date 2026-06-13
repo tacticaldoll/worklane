@@ -8,17 +8,14 @@
 //! Jobs are partitioned by lane: `reserve(lane)` only returns jobs enqueued to
 //! that lane, and a lane no worker reserves retains its jobs indefinitely.
 
-mod clock;
-
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use worklane_core::{
-    Broker, DeadLetter, Error, JobEnvelope, JobId, NewJob, Reservation, ReservationReceipt, Result,
+    Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, NewJob, Reservation, ReservationReceipt,
+    Result, SystemClock,
 };
-
-pub use clock::{Clock, ManualClock, SystemClock};
 
 /// The default visibility lease duration.
 pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);

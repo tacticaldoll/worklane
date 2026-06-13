@@ -1,6 +1,6 @@
 [package]
-name = "worklane-memory"
-description = "In-memory broker for worklane, for development and tests."
+name = "worklane-test"
+description = "Reusable broker conformance test suite for worklane brokers."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,3 @@ authors.workspace = true
 [dependencies]
 worklane-core = { workspace = true }
 async-trait = { workspace = true }
-
-[dev-dependencies]
-tokio = { workspace = true }
-worklane-test = { workspace = true }

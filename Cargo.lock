@@ -581,6 +581,7 @@ dependencies = [
  "tracing",
  "worklane-core",
  "worklane-memory",
+ "worklane-test",
 ]
 
 [[package]]
@@ -600,6 +601,15 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "tokio",
+ "worklane-core",
+ "worklane-test",
+]
+
+[[package]]
+name = "worklane-test"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
  "worklane-core",
 ]
 
