@@ -79,10 +79,41 @@ earliest:
 Do not add concurrency or durable-broker scope merely because a correctness
 foundation enables it. Keep the enabling contract change separate and small.
 
+## Design principles
+
+General and meant to outlast any specific module. The concrete gates below
+(API stability, the Broker design gate) are applications of these.
+
+- **Least commitment.** Do only what a present, concrete need requires.
+  Introduce an abstraction together with its first real consumer — the consumer
+  proves its shape; build no seam that has no user yet. Improvements noticed but
+  not yet needed are recorded in `BACKLOG.md`, not folded into the current change.
+
+- **Minimal contracts.** A shared contract (trait, interface, API) carries only
+  what every implementation must honour. Implementation-specific conveniences
+  stay behind the implementation — surfaced through a per-implementation adapter
+  when tests or callers need them, never promoted onto the contract. A minimal
+  contract is what keeps implementations substitutable and changes non-breaking.
+
+- **Separate knowledge by its kind.** What the system *does* (behaviour), *how*
+  we build and evolve it (process, discipline), and what we have chosen *not to
+  do yet* (deferred work) are different kinds of knowledge with different
+  lifetimes. Behaviour is specified (`openspec/specs/`), discipline is governed
+  (this file), deferred work is listed (`BACKLOG.md`). Put each where its kind
+  belongs.
+
+- **Promote only proven patterns.** A pattern used once is a hypothesis: record
+  it and let the next use test it; promote it to a rule here only when it has
+  held across more than one change. This applies to these rules themselves —
+  govern slowly, from practice, not from a single good idea.
+  - _Pending:_ the lift/sink structural sort and the conformance-harness /
+    adapter pattern (from `establish-broker-contract`) are hypotheses awaiting
+    that change; codify once proven.
+
 ## API stability and evolution
 
-The public API is a long-term promise; favor changes that can grow without
-breaking callers.
+An application of *Minimal contracts*: the public API is a long-term promise;
+favor changes that can grow without breaking callers.
 
 - Public types expected to gain fields or variants — `JobEnvelope`, `NewJob`,
   `JobContext`, `Reservation`, `DeadLetter`, and `Error` — MUST be
@@ -95,7 +126,8 @@ breaking callers.
 
 ## Broker design gate
 
-The `Broker` trait is the load-bearing abstraction; protect its portability.
+An application of *Minimal contracts* to the broker: the `Broker` trait is the
+load-bearing abstraction; protect its portability.
 
 - Any change to the `Broker` trait MUST be answerable as a SQL or Redis
   implementation (e.g. "how would Postgres do this with
