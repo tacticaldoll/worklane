@@ -17,7 +17,7 @@ mod payload;
 mod retry;
 
 pub use broker::Broker;
-pub use clock::{Clock, SystemClock};
+pub use clock::{Clock, SystemClock, WallClock};
 pub use envelope::{DeadLetter, JobEnvelope, NewJob, Reservation, ReservationReceipt};
 pub use error::{Error, Result};
 pub use id::JobId;

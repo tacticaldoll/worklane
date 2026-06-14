@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// A monotonic time source, abstracted so brokers derive time-based decisions
 /// (visibility, lease expiry, retry scheduling) from an injectable clock rather
@@ -34,5 +34,36 @@ impl Default for SystemClock {
 impl Clock for SystemClock {
     fn now(&self) -> Duration {
         self.start.elapsed()
+    }
+}
+
+/// A wall-clock time source anchored at the Unix epoch.
+///
+/// Unlike [`SystemClock`], whose epoch is the moment the process constructed it,
+/// `WallClock` measures time since `UNIX_EPOCH`. Its values are therefore stable
+/// across process restarts, which is what a durable broker needs so persisted
+/// visibility and lease times stay meaningful after a restart. The trade-off is
+/// that it is **not monotonic**: it follows wall-clock adjustments (e.g. NTP).
+pub struct WallClock;
+
+impl WallClock {
+    /// Create a wall-clock time source.
+    pub fn new() -> Self {
+        WallClock
+    }
+}
+
+impl Default for WallClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clock for WallClock {
+    fn now(&self) -> Duration {
+        // A system clock set before 1970 is degenerate; clamp rather than panic.
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
     }
 }

@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use rusqlite::{Connection, OptionalExtension, params};
 use worklane_core::{
     Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, NewJob, Reservation, ReservationReceipt,
-    Result, SystemClock,
+    Result, WallClock,
 };
 
 /// The default visibility lease duration.
@@ -67,7 +67,9 @@ impl SqliteBroker {
         conn.execute_batch(SCHEMA).map_err(sql_err)?;
         Ok(SqliteBroker {
             conn: Arc::new(Mutex::new(conn)),
-            clock: Arc::new(SystemClock::new()),
+            // A durable broker needs a restart-stable epoch: WallClock measures
+            // since UNIX_EPOCH, so persisted times survive a process restart.
+            clock: Arc::new(WallClock::new()),
             lease: DEFAULT_LEASE,
         })
     }
