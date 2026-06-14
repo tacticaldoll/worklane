@@ -6,8 +6,10 @@ this file is the upstream idea list that feeds `/opsx:propose`.
 
 ## Near-term sequencing (foundations before polish)
 
-The agreed order of foundational changes; each de-risks the next. Steps 1–4 have
-shipped (details in `openspec/changes/archive/`); step 5 is the live next item.
+The agreed order of foundational changes; each de-risks the next. Steps 1–5 have
+shipped (details in `openspec/changes/archive/`); the near-term sequencing is
+complete. Candidate next changes are recorded under "Surfaced during
+`bounded-long-handler-support`" below.
 
 1. ✓ **`add-broker-contract-tests`** (shipped as `establish-broker-contract`) —
    reusable broker-agnostic conformance suite derived from the broker spec;
@@ -20,11 +22,12 @@ shipped (details in `openspec/changes/archive/`); step 5 is the live next item.
 4. ✓ **`add-concurrent-worker`** — in-task bounded concurrency (`with_concurrency`);
    made lease-too-short real and tested (a handler outliving its lease is
    redelivered and runs twice, at-least-once).
-5. ⏭ **lease extension / renewal** (next) — heartbeat to hold a reservation past
-   the lease for long handlers. Adds a `Broker` trait method — the first change
-   to the trait since it was durable-validated — and now has both a durable
-   backend and concurrency to test real contention. See "Concurrent-worker
-   follow-ups" below for the motivation surfaced by step 4.
+5. ✓ **lease extension / renewal** (shipped as `bounded-long-handler-support`) —
+   heartbeat to hold a reservation past the lease while a handler runs, bounded
+   by a handler timeout so a stuck handler stays mortal. Added `Broker::extend`
+   (the first trait change since durable validation, recorded in ADR 0003) and
+   an observable `Reservation` lease; both brokers pass the conformance suite
+   unchanged afterward.
 
 ## Deferred (post-v0.1)
 
@@ -99,11 +102,29 @@ futures on one task via `FuturesUnordered`). These were deliberately deferred:
 - resilient daemon: `run` currently fails fast on a non-stale broker error
   (drains, then returns it). A "log and keep running" mode is a separate
   behavioural decision, deferred.
-- lease extension / renewal (sequencing step 5): now motivated — under
-  concurrency a handler outliving its lease is redelivered and runs twice
-  (at-least-once); a heartbeat to hold the lease is the mitigation.
+- lease extension / renewal (sequencing step 5): ✓ shipped as
+  `bounded-long-handler-support` — a heartbeat holds the lease while a handler
+  runs, bounded by a handler timeout.
 - multi-lane / fair scheduling across lanes: unlocked by concurrency (see the
   lane follow-ups above), still deferred.
+
+### Surfaced during `bounded-long-handler-support`
+
+The change's exploration surfaced these correctness/feature gaps, recorded (not
+sequenced) for a future change to weigh:
+
+- handler panic isolation: a handler that *panics* (vs returning `Err`) unwinds
+  out of `run`, crashing the worker and abandoning sibling in-flight jobs; the
+  panicking job is never dead-lettered (a poison loop). A `catch_unwind` around
+  dispatch, mapping a panic to the existing failure path, would bound it.
+- restart-durable clock: `SystemClock` is process-local, so `worklane-sqlite`'s
+  persisted `available_at` / `leased_until` are meaningless after a restart
+  (every persisted job stranded). A wall-clock-epoch clock is needed for true
+  durability (see also the durable-broker follow-ups above).
+- dead-letter read/replay on the contract: `fail` writes dead letters but the
+  `Broker` trait exposes no way to inspect or requeue them. A paginated read
+  plus replay (attempts-reset vs continuation semantics TBD) would make the
+  dead-letter store operable without binding the trait to an in-memory shape.
 
 ## Guiding principle
 
