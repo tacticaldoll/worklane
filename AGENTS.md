@@ -111,6 +111,13 @@ General and meant to outlast any specific module. The concrete gates below
   it and let the next use test it; promote it to a rule here only when it has
   held across more than one change. This applies to these rules themselves —
   govern slowly, from practice, not from a single good idea.
+  - *Hypothesis under test (recorded in `bounded-long-handler-support`, not yet a
+    rule):* open questions are gated by kind, not banned. `openspec/specs/` (the
+    contract / shipped truth) MUST NOT carry an open question at any point. A
+    `design.md` MAY capture one; if its answer changes the delta spec or public
+    API it MUST be resolved before **apply**, otherwise (implementation-level) it
+    MAY ride into apply and MUST be resolved before **sync**. Test this on the
+    next change before promoting it.
 
 ## API stability and evolution
 
