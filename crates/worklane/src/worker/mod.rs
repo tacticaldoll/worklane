@@ -45,6 +45,7 @@ pub struct Worker {
     lane: String,
     poll_interval: Duration,
     concurrency: usize,
+    handler_timeout: Option<Duration>,
 }
 
 impl Worker {
@@ -57,6 +58,7 @@ impl Worker {
             lane: DEFAULT_LANE.to_string(),
             poll_interval: DEFAULT_POLL_INTERVAL,
             concurrency: 1,
+            handler_timeout: None,
         }
     }
 
@@ -83,6 +85,20 @@ impl Worker {
     /// A value of 0 is treated as 1 so the worker always makes progress.
     pub fn with_concurrency(mut self, concurrency: usize) -> Self {
         self.concurrency = concurrency.max(1);
+        self
+    }
+
+    /// Set the maximum wall-clock time a single handler may run (builder style).
+    ///
+    /// When set, [`run`](Self::run) heartbeats to extend each job's reservation
+    /// lease while its handler runs within this bound, so a slow handler keeps
+    /// its reservation instead of being redelivered. A handler that exceeds the
+    /// timeout is abandoned and routed through the normal failure path (retry
+    /// while attempts remain, else dead-letter), so a stuck handler stays
+    /// bounded. Unset (the default) means no heartbeat and no timeout: lease
+    /// expiry may redeliver a long handler, as before.
+    pub fn with_handler_timeout(mut self, timeout: Duration) -> Self {
+        self.handler_timeout = Some(timeout);
         self
     }
 

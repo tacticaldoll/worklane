@@ -58,6 +58,12 @@ Run it with `cargo run -p worklane --example basic`.
 > **Delivery is at-least-once.** A job may run more than once (after a lease
 > expiry or a crash), so **handlers must be idempotent.**
 
+For handlers that can legitimately run longer than the broker's visibility
+lease, set `Worker::with_handler_timeout(..)`: the worker heartbeats to hold the
+reservation while the handler runs within the timeout, and routes it to
+retry/dead-letter if it exceeds it — so a slow handler keeps its lease and a
+stuck one stays bounded.
+
 ## Workspace
 
 | Crate | Role |
