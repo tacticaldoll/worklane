@@ -113,10 +113,9 @@ futures on one task via `FuturesUnordered`). These were deliberately deferred:
 The change's exploration surfaced these correctness/feature gaps, recorded (not
 sequenced) for a future change to weigh:
 
-- handler panic isolation: a handler that *panics* (vs returning `Err`) unwinds
-  out of `run`, crashing the worker and abandoning sibling in-flight jobs; the
-  panicking job is never dead-lettered (a poison loop). A `catch_unwind` around
-  dispatch, mapping a panic to the existing failure path, would bound it.
+- handler panic isolation: ✓ shipped as `isolate-handler-panics` — a panic that
+  unwinds out of a handler is caught and routed through the failure path
+  (retry / dead-letter) instead of crashing the worker or abandoning siblings.
 - restart-durable clock: `SystemClock` is process-local, so `worklane-sqlite`'s
   persisted `available_at` / `leased_until` are meaningless after a restart
   (every persisted job stranded). A wall-clock-epoch clock is needed for true
