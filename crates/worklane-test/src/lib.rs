@@ -85,5 +85,21 @@ macro_rules! broker_contract_timed {
         async fn contract_superseded_receipt_rejected_current_resolves() {
             $crate::scenarios::superseded_receipt_rejected_current_resolves(&$harness).await;
         }
+        #[::tokio::test]
+        async fn contract_reservation_conveys_lease() {
+            $crate::scenarios::reservation_conveys_lease(&$harness).await;
+        }
+        #[::tokio::test]
+        async fn contract_extend_holds_past_original_lease() {
+            $crate::scenarios::extend_holds_past_original_lease(&$harness).await;
+        }
+        #[::tokio::test]
+        async fn contract_extend_after_expiry_rejected() {
+            $crate::scenarios::extend_after_expiry_rejected(&$harness).await;
+        }
+        #[::tokio::test]
+        async fn contract_superseded_receipt_cannot_extend() {
+            $crate::scenarios::superseded_receipt_cannot_extend(&$harness).await;
+        }
     };
 }

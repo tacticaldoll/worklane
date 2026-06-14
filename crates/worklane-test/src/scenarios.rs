@@ -221,3 +221,84 @@ pub async fn superseded_receipt_rejected_current_resolves<H: TimedBrokerContract
         "the job is gone after a valid ack"
     );
 }
+
+/// A reservation conveys the broker's configured lease, so a caller can time a
+/// heartbeat without reading the broker's clock.
+pub async fn reservation_conveys_lease<H: TimedBrokerContractHarness>(h: &H) {
+    let b = h.broker();
+    b.enqueue(job("default")).await.unwrap();
+    let r = b.reserve("default").await.unwrap().expect("job");
+    assert_eq!(
+        r.lease,
+        h.lease(),
+        "the reservation must convey the broker's lease duration"
+    );
+}
+
+/// Extending a held reservation keeps the job hidden past its original lease and
+/// leaves it resolvable with the same receipt.
+pub async fn extend_holds_past_original_lease<H: TimedBrokerContractHarness>(h: &H) {
+    let b = h.broker();
+    b.enqueue(job("default")).await.unwrap();
+    let r = b.reserve("default").await.unwrap().expect("job");
+    // Extend before the lease expires, then advance to the original expiry: the
+    // re-applied lease (measured from the extend) keeps the job held.
+    h.advance(h.lease() / 2);
+    b.extend(r.receipt)
+        .await
+        .expect("a current receipt must extend");
+    h.advance(h.lease() / 2);
+    assert!(
+        b.reserve("default").await.unwrap().is_none(),
+        "an extended job stays hidden past its original lease"
+    );
+    b.ack(r.receipt)
+        .await
+        .expect("the same receipt still resolves after an extend");
+}
+
+/// Extending after the lease has expired is rejected as stale and does not
+/// mutate the job.
+pub async fn extend_after_expiry_rejected<H: TimedBrokerContractHarness>(h: &H) {
+    let b = h.broker();
+    b.enqueue(job("default")).await.unwrap();
+    let r = b.reserve("default").await.unwrap().expect("job");
+    h.advance(h.lease());
+    assert!(
+        matches!(b.extend(r.receipt).await, Err(Error::StaleReservation(_))),
+        "extending an expired receipt must be rejected as stale"
+    );
+    let r2 = b
+        .reserve("default")
+        .await
+        .unwrap()
+        .expect("the job should requeue after lease expiry");
+    assert_eq!(
+        r2.envelope.attempts, 0,
+        "a rejected extend must not mutate the job"
+    );
+}
+
+/// After the lease expires and the job is re-reserved, the first (superseded)
+/// receipt cannot extend, and the current reservation is unaffected.
+pub async fn superseded_receipt_cannot_extend<H: TimedBrokerContractHarness>(h: &H) {
+    let b = h.broker();
+    b.enqueue(job("default")).await.unwrap();
+    let first = b.reserve("default").await.unwrap().expect("first reserve");
+    h.advance(h.lease());
+    let second = b
+        .reserve("default")
+        .await
+        .unwrap()
+        .expect("re-reserve after lease expiry");
+    assert!(
+        matches!(
+            b.extend(first.receipt).await,
+            Err(Error::StaleReservation(_))
+        ),
+        "a superseded receipt must not extend"
+    );
+    b.ack(second.receipt)
+        .await
+        .expect("the current receipt must still resolve");
+}

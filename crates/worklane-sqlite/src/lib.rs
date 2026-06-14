@@ -145,7 +145,8 @@ impl Broker for SqliteBroker {
     async fn reserve(&self, lane: &str) -> Result<Option<Reservation>> {
         let now_d = self.clock.now();
         let now = nanos(now_d);
-        let lease_until = nanos(now_d + self.lease);
+        let lease = self.lease;
+        let lease_until = nanos(now_d + lease);
         let lane = lane.to_string();
         self.run(move |conn| {
             let receipt = ReservationReceipt::new();
@@ -169,7 +170,7 @@ impl Broker for SqliteBroker {
                 .optional()
                 .map_err(sql_err)?;
             match blob {
-                Some(b) => Ok(Some(Reservation::new(decode_envelope(&b)?, receipt))),
+                Some(b) => Ok(Some(Reservation::new(decode_envelope(&b)?, receipt, lease))),
                 None => Ok(None),
             }
         })
@@ -218,6 +219,30 @@ impl Broker for SqliteBroker {
             .map_err(sql_err)?;
             conn.execute("DELETE FROM jobs WHERE seq = ?1", params![seq])
                 .map_err(sql_err)?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn extend(&self, receipt: ReservationReceipt) -> Result<()> {
+        let now_d = self.clock.now();
+        let now = nanos(now_d);
+        let lease_until = nanos(now_d + self.lease);
+        self.run(move |conn| {
+            let key = receipt_key(&receipt)?;
+            // Single guarded re-lease: the `leased_until > now` predicate is the
+            // same validity check `find_valid_row` applies, so an expired or
+            // superseded receipt matches no row and is rejected as stale without
+            // touching attempts or schedule.
+            let changed = conn
+                .execute(
+                    "UPDATE jobs SET leased_until = ?1 WHERE receipt = ?2 AND leased_until > ?3",
+                    params![lease_until, key, now],
+                )
+                .map_err(sql_err)?;
+            if changed == 0 {
+                return Err(stale(receipt));
+            }
             Ok(())
         })
         .await

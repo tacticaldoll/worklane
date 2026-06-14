@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -99,12 +101,22 @@ pub struct Reservation {
     pub envelope: JobEnvelope,
     /// The opaque receipt for this reservation instance.
     pub receipt: ReservationReceipt,
+    /// The visibility lease the broker applied to this reservation. A caller can
+    /// use it to schedule lease maintenance (for example a heartbeat that calls
+    /// [`Broker::extend`](crate::Broker::extend)) without reading the broker's
+    /// clock.
+    pub lease: Duration,
 }
 
 impl Reservation {
-    /// Pair a reserved envelope with the receipt that resolves it.
-    pub fn new(envelope: JobEnvelope, receipt: ReservationReceipt) -> Self {
-        Reservation { envelope, receipt }
+    /// Pair a reserved envelope with the receipt that resolves it and the lease
+    /// the broker applied.
+    pub fn new(envelope: JobEnvelope, receipt: ReservationReceipt, lease: Duration) -> Self {
+        Reservation {
+            envelope,
+            receipt,
+            lease,
+        }
     }
 }
 

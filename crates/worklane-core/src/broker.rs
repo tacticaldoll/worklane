@@ -26,6 +26,18 @@ pub trait Broker: Send + Sync {
     /// again after `delay`.
     async fn retry(&self, receipt: ReservationReceipt, delay: Duration) -> Result<()>;
 
+    /// Re-apply the broker's visibility lease to the job currently held under
+    /// `receipt`, keeping it hidden from other [`reserve`](Broker::reserve)
+    /// callers for a fresh lease measured from now. Used as a heartbeat so a
+    /// still-running handler does not lose its reservation.
+    ///
+    /// Rejects a receipt that is unknown, superseded, or whose lease has already
+    /// expired with [`Error::StaleReservation`](crate::Error::StaleReservation),
+    /// and MUST NOT change the job's `attempts`, schedule, or visibility on that
+    /// rejection. The lease duration is owned by the broker (as for `reserve`);
+    /// `extend` takes no caller-supplied duration.
+    async fn extend(&self, receipt: ReservationReceipt) -> Result<()>;
+
     /// Move the reserved job to the dead-letter store, retaining `error`.
     async fn fail(&self, receipt: ReservationReceipt, error: String) -> Result<()>;
 }

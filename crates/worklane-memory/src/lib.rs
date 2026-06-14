@@ -161,7 +161,11 @@ impl Broker for InMemoryBroker {
                 let receipt = ReservationReceipt::new();
                 job.leased_until = Some(lease_until);
                 job.receipt = Some(receipt);
-                Ok(Some(Reservation::new(job.envelope.clone(), receipt)))
+                Ok(Some(Reservation::new(
+                    job.envelope.clone(),
+                    receipt,
+                    self.lease,
+                )))
             }
             None => Ok(None),
         }
@@ -193,6 +197,17 @@ impl Broker for InMemoryBroker {
         let pos = Self::find_current_receipt(&mut inner, receipt, now)?;
         let job = inner.jobs.remove(pos);
         inner.dead.push(DeadLetter::new(job.envelope, error));
+        Ok(())
+    }
+
+    async fn extend(&self, receipt: ReservationReceipt) -> Result<()> {
+        let now = self.clock.now();
+        let lease_until = now + self.lease;
+        let mut inner = self.lock();
+        // The same validity check as every other resolution: an expired or
+        // superseded receipt is rejected without touching the job.
+        let pos = Self::find_current_receipt(&mut inner, receipt, now)?;
+        inner.jobs[pos].leased_until = Some(lease_until);
         Ok(())
     }
 }
