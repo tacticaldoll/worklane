@@ -77,10 +77,10 @@ consumer needs them:
   envelope as a serde blob to avoid any core change. A columnar backend
   (Postgres) is the first real consumer that benefits from an additive
   envelope-reconstruction constructor and individually queryable columns.
-- restart-durable clock: `SystemClock` is monotonic and process-local, so
-  persisted absolute times are meaningless across a process restart. A
-  production durable broker needs a stable wall-clock-epoch clock; the broker is
-  correct with respect to whatever clock it is given.
+- restart-durable clock: ✓ shipped as `restart-durable-clock` — `SystemClock`
+  was monotonic but process-local, so persisted absolute times were meaningless
+  across a restart; added a wall-clock-epoch `WallClock` and defaulted the
+  durable broker to it.
 - connection pool / concurrent connections: `worklane-sqlite` uses a single
   connection behind a `Mutex`. Real connection concurrency belongs with the
   concurrent-worker step.
@@ -116,10 +116,9 @@ sequenced) for a future change to weigh:
 - handler panic isolation: ✓ shipped as `isolate-handler-panics` — a panic that
   unwinds out of a handler is caught and routed through the failure path
   (retry / dead-letter) instead of crashing the worker or abandoning siblings.
-- restart-durable clock: `SystemClock` is process-local, so `worklane-sqlite`'s
-  persisted `available_at` / `leased_until` are meaningless after a restart
-  (every persisted job stranded). A wall-clock-epoch clock is needed for true
-  durability (see also the durable-broker follow-ups above).
+- restart-durable clock: ✓ shipped as `restart-durable-clock` — added a
+  Unix-epoch `WallClock` and defaulted `SqliteBroker` to it, so persisted
+  visibility and lease times survive a process restart.
 - dead-letter read/replay on the contract: `fail` writes dead letters but the
   `Broker` trait exposes no way to inspect or requeue them. A paginated read
   plus replay (attempts-reset vs continuation semantics TBD) would make the
