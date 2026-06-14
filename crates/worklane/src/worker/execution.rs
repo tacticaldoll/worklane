@@ -3,14 +3,27 @@
 //! orchestration that decides *when* to run a job (reserve, concurrency,
 //! shutdown, poll) lives in the parent module; this is the unit it drives.
 
+use std::any::Any;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use worklane_core::{
     Error, JobContext, JobEnvelope, JobId, Reservation, ReservationReceipt, Result,
 };
 
 use super::Worker;
+
+/// Render a caught panic payload as a handler-error message, best effort.
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "handler panicked".to_string());
+    format!("handler panicked: {detail}")
+}
 
 /// The outcome of running a handler future, possibly under a timeout.
 enum HandlerOutcome {
@@ -44,7 +57,17 @@ impl Worker {
         };
 
         tracing::info!(job_id = %id, kind = %envelope.kind, attempt = envelope.attempts + 1, "dispatching job");
-        let handler = dispatch.dispatch(ctx, &envelope.payload);
+        // Contain a panic that unwinds out of the handler: catch it and surface
+        // it as a handler error, so it flows through the normal failure path
+        // (retry / dead-letter) instead of crashing the worker and abandoning
+        // sibling in-flight jobs. `AssertUnwindSafe` is sound here because a
+        // panicking job is discarded, never resumed, so no broken state leaks.
+        let handler = AssertUnwindSafe(dispatch.dispatch(ctx, &envelope.payload))
+            .catch_unwind()
+            .map(|caught| match caught {
+                Ok(result) => result,
+                Err(payload) => Err(Error::Handler(panic_message(payload))),
+            });
         // With no handler timeout configured, behave exactly as before: just run
         // the handler. With one configured, heartbeat to hold the lease while it
         // runs, and abandon it at the timeout.
