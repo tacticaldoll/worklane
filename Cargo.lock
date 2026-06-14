@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "worklane"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -726,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "worklane-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -737,7 +737,7 @@ dependencies = [
 
 [[package]]
 name = "worklane-memory"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "tokio",
@@ -747,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "worklane-sqlite"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "rusqlite",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "worklane-test"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "worklane-core",

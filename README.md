@@ -6,8 +6,11 @@
 jobs and run workers with retries, ack/fail semantics, dead-lettering, and
 pluggable brokers.
 
-> **Status: experimental (0.0.1).** The core loop works with the in-memory
-> broker; the API may still change. Durable brokers are not built yet.
+> **Status: 0.1.0.** The core loop is solid across an in-memory and a durable
+> SQLite broker (both pass a shared conformance suite): typed enqueue, lane
+> partitioning, a long-running worker with bounded concurrency, lease renewal
+> with a handler timeout, retry/dead-letter, and handler panic isolation. The
+> API follows additive, non-breaking evolution but may still grow before 1.0.
 
 ## Core loop
 
@@ -71,6 +74,8 @@ stuck one stays bounded.
 | `worklane` | Public-facing facade API |
 | `worklane-core` | Traits, job model, envelope, errors |
 | `worklane-memory` | In-memory broker for dev/tests |
+| `worklane-sqlite` | Durable SQLite broker |
+| `worklane-test` | Reusable broker conformance suite |
 
 ## Development
 

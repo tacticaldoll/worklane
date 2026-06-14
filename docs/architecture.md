@@ -29,6 +29,8 @@ API receives request
   typed `Job` trait, and the error type. The broker stores **opaque envelopes**
   and does not know Rust handler types.
 - `worklane-memory` — in-memory `Broker` implementation for dev and tests.
+- `worklane-sqlite` — durable SQLite `Broker` implementation.
+- `worklane-test` — reusable broker conformance suite any `Broker` can run.
 - `worklane` — facade: `Client`, `Worker`, handler registry keyed by job kind.
 
 (`worklane-redis`, `worklane-macros`, etc. are deferred — see `BACKLOG.md`.)
