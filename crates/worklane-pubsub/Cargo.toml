@@ -1,0 +1,22 @@
+[package]
+name = "worklane-pubsub"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Optional topic-to-lane fan-out layer built on the worklane facade."
+readme = "README.md"
+
+[dependencies]
+worklane = { path = "../worklane", version = "0.1.0" }
+tracing.workspace = true
+
+[dev-dependencies]
+worklane-memory.workspace = true
+tokio.workspace = true
+serde.workspace = true
+async-trait.workspace = true

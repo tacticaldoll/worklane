@@ -1,0 +1,26 @@
+[package]
+name = "worklane"
+description = "Facade API for typed background jobs in Rust services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+worklane-core = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+worklane-memory = { workspace = true }
+worklane-test = { workspace = true }
+tokio = { workspace = true, features = ["sync", "test-util"] }

@@ -1,0 +1,30 @@
+[package]
+name = "worklane-redis"
+description = "Single-node Redis-backed durable worklane broker for production services."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+worklane-core = { workspace = true }
+async-trait = { workspace = true }
+redis = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+# Opt-in TLS: enables rustls so `rediss://` URLs connect over TLS. Off by
+# default so plaintext deployments do not compile a TLS stack.
+tls = ["redis/tls-rustls", "redis/tokio-rustls-comp"]
+
+[dev-dependencies]
+async-trait = { workspace = true }
+tokio = { workspace = true }
+worklane-test = { workspace = true }
+redis = { workspace = true }

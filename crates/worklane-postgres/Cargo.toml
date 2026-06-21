@@ -1,0 +1,34 @@
+[package]
+name = "worklane-postgres"
+description = "PostgreSQL-backed durable worklane broker for production services."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+worklane-core = { workspace = true }
+async-trait = { workspace = true }
+tokio-postgres = { workspace = true }
+deadpool-postgres = { workspace = true }
+tokio = { workspace = true }
+tokio-postgres-rustls = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
+
+[features]
+# Opt-in TLS: connect over rustls using the system root certificates. Off by
+# default so plaintext deployments do not compile a TLS stack.
+tls = ["dep:tokio-postgres-rustls", "dep:rustls", "dep:rustls-native-certs"]
+
+[dev-dependencies]
+async-trait = { workspace = true }
+# `sync` (over the workspace default features) is test-only: the conformance
+# harness uses a Semaphore to bound concurrent connections against a shared server.
+tokio = { workspace = true, features = ["sync"] }
+worklane-test = { workspace = true }

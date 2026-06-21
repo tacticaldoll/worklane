@@ -1,0 +1,125 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Fast, dependency-free gate: formatting and lints. Runs without any database
+  # so it fails quickly on style/lint regressions before the heavier test job.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - uses: Swatinem/rust-cache@v2
+    - name: Format
+      run: cargo fmt --all --check
+    - name: Clippy default features
+      run: cargo clippy --workspace --all-targets
+    - name: Clippy all features
+      run: cargo clippy --workspace --all-targets --all-features
+
+  # MSRV gate: `rust-version = "1.85"` is a release contract, not just manifest
+  # metadata. Latest stable can accept code that the declared minimum compiler
+  # cannot, so keep this as a separate compile-compatibility check.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.85.0
+    - uses: Swatinem/rust-cache@v2
+    - name: Check default features
+      run: cargo check --workspace --all-targets
+    - name: Check all features
+      run: cargo check --workspace --all-targets --all-features
+
+  # Supply-chain gate: RustSec advisories, license policy, banned/wildcard deps,
+  # and source allow-listing, all driven by deny.toml. Dependency-free and fast,
+  # so a vulnerable or unmaintained dependency fails the build early.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: EmbarkStudios/cargo-deny-action@v2
+      with:
+        command: check advisories bans licenses sources
+
+  # Public documentation is the crates.io/docs.rs first impression. Broken,
+  # private, ambiguous, undocumented, or otherwise warning-producing rustdoc
+  # output fails this gate before it can ship.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - name: Docs default features
+      run: RUSTDOCFLAGS="-D warnings -D missing_docs" cargo doc --workspace --no-deps
+    - name: Docs all features
+      run: RUSTDOCFLAGS="-D warnings -D missing_docs" cargo doc --workspace --no-deps --all-features
+
+  # Full test job WITH live Postgres and Redis services, so the networked-broker
+  # conformance, poison, and retention tiers actually run rather than skipping.
+  # The env vars match the names the backend tests gate on
+  # (WORKLANE_POSTGRES_TEST_URL / WORKLANE_REDIS_TEST_URL); without them those
+  # tests visibly skip.
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: worklane
+          POSTGRES_PASSWORD: worklane
+          POSTGRES_DB: worklane
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U worklane"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      WORKLANE_POSTGRES_TEST_URL: postgres://worklane:worklane@localhost:5432/worklane
+      WORKLANE_REDIS_TEST_URL: redis://localhost:6379
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - name: Build
+      run: cargo build --workspace --all-targets --verbose
+    - name: Check all features
+      run: cargo check --workspace --all-targets --all-features
+    - name: Run tests
+      run: cargo test --workspace --verbose
+
+  # Guard the release path: every publishable crate must stay packageable and
+  # its packaged tarball must compile as a registry consumer would see it. Use a
+  # package-specific target dir so stale package verification artifacts from
+  # cache restores cannot decide the result.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - name: Package check
+      run: CARGO_TARGET_DIR=/tmp/worklane-package-check cargo package --workspace

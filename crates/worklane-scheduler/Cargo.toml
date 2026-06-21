@@ -1,0 +1,27 @@
+[package]
+name = "worklane-scheduler"
+description = "Optional recurring cron scheduler that enqueues worklane jobs."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+worklane-core = { workspace = true }
+tokio = { workspace = true }
+cron = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+worklane-memory = { workspace = true }
+worklane-test = { workspace = true }
+tokio = { workspace = true, features = ["sync", "test-util"] }
+serde = { workspace = true }
+async-trait = { workspace = true }

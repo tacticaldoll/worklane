@@ -1,0 +1,62 @@
+name: Bug Report
+description: Report incorrect behavior, a regression, or a release-blocking bug.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Minimal code, commands, schema, or service setup needed.
+      placeholder: |
+        1. Configure broker ...
+        2. Enqueue job ...
+        3. Run worker ...
+    validations:
+      required: true
+  - type: dropdown
+    id: broker
+    attributes:
+      label: Broker
+      options:
+        - In-memory
+        - SQLite
+        - PostgreSQL
+        - Redis
+        - Multiple brokers
+        - Not broker-specific
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: worklane version or commit
+      placeholder: "0.1.0 or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: rust
+    attributes:
+      label: Rust version
+      placeholder: "rustc --version"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Logs, lane names, payload shape, timing, or deployment notes.

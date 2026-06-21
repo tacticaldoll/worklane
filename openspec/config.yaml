@@ -1,0 +1,58 @@
+schema: spec-driven
+
+context: |
+  # worklane — project context
+
+  worklane is a small, Rust-native async background job runner for Rust web
+  services. Tagline: "Typed background jobs for Rust services." It lets services
+  enqueue typed jobs and run workers with retries, ack/fail semantics,
+  dead-lettering, and pluggable brokers. Inspired by Celery but intentionally
+  smaller — do NOT treat it as a Celery clone.
+
+  ## Core principle: protect the core loop
+  The whole design protects this loop; everything else is backlog:
+    typed payload -> envelope -> broker reserve -> dispatch by kind
+                  -> run handler -> ack / retry / fail / dead-letter
+
+  ## Scope
+  Shipped and in scope: typed job enqueue; worker handler registry; the Broker
+  trait with durable backends (in-memory, SQLite, Postgres, Redis); ack / retry /
+  fail with a retry policy; dead-letter after max attempts, plus dead-letter
+  read / count / requeue / purge; priority queues; multiple lanes; unique-key
+  dedup; batch enqueue; delayed and cron-scheduled jobs with HA scheduler
+  coordination; a durable result store; workflow canvas (chains / chords);
+  OpenTelemetry trace-context propagation; an operator CLI (`wl`); tokio async;
+  serde payloads; tracing logs; a broker conformance suite.
+
+  Still out of scope (see BACKLOG.md): NATS/SQS brokers, an admin dashboard/UI,
+  rate limiting, per-job concurrency limits, job cancellation, multi-lane fair
+  scheduling. Reject scope creep into these unless explicitly justified.
+
+  ## Architecture
+  Cargo workspace (edition 2024). Crates:
+   - worklane-core: JobId, JobEnvelope, NewJob, the Broker trait, the typed Job
+     trait, and the error type. The broker stores OPAQUE envelopes (bytes
+     payload) and must NOT know Rust handler types.
+   - worklane-memory: in-memory Broker implementation for dev/tests.
+   - worklane: facade — Client, Worker, handler registry keyed by job kind.
+   - worklane-sqlite / worklane-postgres / worklane-redis: durable brokers.
+   - worklane-scheduler: recurring schedules and HA occurrence claims.
+   - worklane-pubsub: topic-to-lane fan-out.
+   - worklane-otel: OpenTelemetry trace-context propagation.
+   - worklane-metrics: metrics-facade observer integration.
+   - worklane-cli: operator CLI.
+   - worklane-test: shared conformance suites.
+  Stack: tokio async, serde payloads, tracing logs, async-trait for async trait
+  methods. Terminology: prefer "lane" over "queue" where it fits the brand.
+
+  ## Semantics to decide deliberately (in design.md, not improvised in code)
+   - reservation lease / visibility timeout when a worker crashes mid-job
+   - retry delay policy (fixed vs backoff)
+   - worker concurrency model (single loop vs N concurrent handlers)
+   - dead-letter storage shape
+   - error type design
+
+  ## References (read these)
+   - AGENTS.md — OpenSpec workflow, commit convention, Definition of Done
+   - docs/architecture.md — architecture overview
+   - BACKLOG.md — deferred features
