@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["tacticaldoll"]
+repository = "https://github.com/tacticaldoll/worklane"
+keywords = ["jobs", "queue", "background", "async", "tokio"]
+categories = ["asynchronous", "concurrency"]
+
+[workspace.dependencies]
+worklane-core = { path = "crates/worklane-core", version = "0.1.0" }
+worklane-memory = { path = "crates/worklane-memory", version = "0.1.0" }
+worklane-sqlite = { path = "crates/worklane-sqlite", version = "0.1.0" }
+worklane-postgres = { path = "crates/worklane-postgres", version = "0.1.0" }
+worklane-redis = { path = "crates/worklane-redis", version = "0.1.0" }
+worklane-pubsub = { path = "crates/worklane-pubsub", version = "0.1.0" }
+worklane-scheduler = { path = "crates/worklane-scheduler", version = "0.1.0" }
+worklane-test = { path = "crates/worklane-test", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
+r2d2 = "0.8"
+tokio-postgres = "0.7"
+deadpool-postgres = "0.14"
+tokio-postgres-rustls = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-native-certs = "0.8"
+redis = { version = ">=1.0.0, <1.2.3", features = ["tokio-comp", "connection-manager"] }
+futures-util = "0.3"
+cron = "0.15"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = { version = "0.10", default-features = false }

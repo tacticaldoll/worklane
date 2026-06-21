@@ -1,0 +1,22 @@
+[package]
+name = "worklane-metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Optional metrics-facade observer for worklane workers and queue depth."
+readme = "README.md"
+
+[dependencies]
+worklane-core.workspace = true
+metrics = "0.24"
+
+[dev-dependencies]
+tokio.workspace = true
+worklane = { path = "../worklane", version = "0.1.0" }
+worklane-memory.workspace = true
+metrics-util = "0.19"

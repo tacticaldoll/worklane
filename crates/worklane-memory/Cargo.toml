@@ -1,0 +1,21 @@
+[package]
+name = "worklane-memory"
+description = "In-memory worklane broker for development, tests, and examples."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+worklane-core = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+tokio = { workspace = true }
+worklane-test = { workspace = true }

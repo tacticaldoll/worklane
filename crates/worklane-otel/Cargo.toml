@@ -1,0 +1,21 @@
+[package]
+name = "worklane-otel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Optional OpenTelemetry trace-context propagation for worklane jobs."
+readme = "README.md"
+
+[dependencies]
+worklane-core.workspace = true
+opentelemetry = { version = "0.27", features = ["trace"] }
+
+[dev-dependencies]
+opentelemetry_sdk = { version = "0.27", features = ["trace"] }
+tokio.workspace = true
+worklane-memory.workspace = true

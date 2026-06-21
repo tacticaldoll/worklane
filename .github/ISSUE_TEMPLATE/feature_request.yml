@@ -1,0 +1,46 @@
+name: Feature Request
+description: Propose a capability or behavior change.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: consumer
+    attributes:
+      label: Consumer or use case
+      description: Who needs this, and what are they trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: capability
+    attributes:
+      label: Requested capability
+      description: Describe the behavior, not only a proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What can be done today, and why is it insufficient?
+  - type: dropdown
+    id: contract
+    attributes:
+      label: Broker contract impact
+      description: Does this require changing `worklane_core::Broker`?
+      options:
+        - No broker contract impact
+        - Maybe
+        - Yes
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: portability
+    attributes:
+      label: Backend portability notes
+      description: How might SQLite, PostgreSQL, and Redis honor this behavior?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, sketches, related crates, or operational constraints.
