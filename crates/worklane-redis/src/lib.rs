@@ -112,6 +112,10 @@ pub struct RedisBroker {
     /// Maximum times a job may be delivered before it is dead-lettered on the
     /// next reserve; `None` (default) means unbounded.
     max_deliveries: Option<u32>,
+    /// Lifecycle Lua scripts, each built and SHA1-hashed once here and reused on
+    /// every operation (the Redis analogue of the Postgres broker's precomputed
+    /// `Queries`).
+    scripts: scripts::Scripts,
 }
 
 impl RedisBroker {
@@ -153,6 +157,7 @@ impl RedisBroker {
             retention: RetentionPolicy::new(),
             dlq_warning: UnboundedDlqWarning::default(),
             max_deliveries: None,
+            scripts: scripts::Scripts::new(),
         };
         broker.check_version().await?;
         Ok(broker)
@@ -311,7 +316,9 @@ impl Broker for RedisBroker {
         let mut conn = self.conn.clone();
         // The script stores the job, or — when the unique key is already held by a
         // live job — returns that job's envelope; either way we decode the id.
-        let stored: Vec<u8> = redis::Script::new(&scripts::enqueue())
+        let stored: Vec<u8> = self
+            .scripts
+            .enqueue
             .arg(&self.namespace)
             .arg(id.to_string())
             .arg(envelope.lane.as_str())
@@ -330,9 +337,7 @@ impl Broker for RedisBroker {
             return Ok(Vec::new());
         }
 
-        let batch_src = scripts::enqueue_batch();
-        let script = redis::Script::new(&batch_src);
-        let mut invoker = script.arg(&self.namespace);
+        let mut invoker = self.scripts.enqueue_batch.arg(&self.namespace);
 
         for job in jobs {
             lane_key_segment(&job.lane)?;
@@ -387,7 +392,9 @@ impl Broker for RedisBroker {
             .unwrap_or(0);
         let has_age_bound = i64::from(self.retention.max_age.is_some());
         let mut conn = self.conn.clone();
-        let res: Option<(Vec<u8>, u32)> = redis::Script::new(&scripts::reserve())
+        let res: Option<(Vec<u8>, u32)> = self
+            .scripts
+            .reserve
             .arg(&self.namespace)
             .arg(lane_seg)
             .arg(now)
@@ -413,7 +420,9 @@ impl Broker for RedisBroker {
     async fn ack(&self, receipt: ReservationReceipt) -> Result<()> {
         let now = nanos(self.clock.now());
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::ack())
+        let ok: i64 = self
+            .scripts
+            .ack
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -431,7 +440,9 @@ impl Broker for RedisBroker {
         // panic before `nanos` clamps to `i64::MAX`.
         let available_at = nanos(now_d.saturating_add(delay));
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::retry())
+        let ok: i64 = self
+            .scripts
+            .retry
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -447,7 +458,9 @@ impl Broker for RedisBroker {
         let now = nanos(now_d);
         let available_at = nanos(now_d.saturating_add(delay));
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::defer())
+        let ok: i64 = self
+            .scripts
+            .defer
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -476,7 +489,9 @@ impl Broker for RedisBroker {
             .unwrap_or(0);
         let has_age_bound = i64::from(self.retention.max_age.is_some());
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::fail())
+        let ok: i64 = self
+            .scripts
+            .fail
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -495,7 +510,9 @@ impl Broker for RedisBroker {
         let now = nanos(now_d);
         let lease_until = nanos(now_d.saturating_add(self.lease));
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::extend())
+        let ok: i64 = self
+            .scripts
+            .extend
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -513,12 +530,9 @@ impl Broker for RedisBroker {
         let job_key = self.key(&format!("job:{id}"));
         let dead_key = self.key(&format!("dead:job:{id}"));
 
-        let script = redis::Script::new(
-            "if redis.call('EXISTS', KEYS[1]) == 1 then return 1 \
-             elseif redis.call('EXISTS', KEYS[2]) == 1 then return 2 \
-             else return 0 end",
-        );
-        let state: i64 = script
+        let state: i64 = self
+            .scripts
+            .classify
             .key(job_key)
             .key(dead_key)
             .invoke_async(&mut conn)
@@ -617,7 +631,9 @@ impl worklane_core::DeadLetterStore for RedisBroker {
         // construction.
         let now = nanos(self.clock.now());
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::requeue())
+        let ok: i64 = self
+            .scripts
+            .requeue
             .arg(&self.namespace)
             .arg(id.to_string())
             .arg(now)
@@ -643,7 +659,9 @@ impl worklane_core::DeadLetterStore for RedisBroker {
         // hash and the lane list. The lane segment is validated key-safe.
         let segment = lane_key_segment(lane)?;
         let mut conn = self.conn.clone();
-        let removed: u64 = redis::Script::new(&scripts::purge_dead())
+        let removed: u64 = self
+            .scripts
+            .purge_dead
             .arg(&self.namespace)
             .arg(segment)
             .invoke_async(&mut conn)
@@ -660,7 +678,9 @@ impl worklane_core::QueueStats for RedisBroker {
         // jobs are still members). The lane segment is validated key-safe.
         let segment = lane_key_segment(lane)?;
         let mut conn = self.conn.clone();
-        let count: u64 = redis::Script::new(scripts::PENDING_COUNT)
+        let count: u64 = self
+            .scripts
+            .pending_count
             .arg(&self.namespace)
             .arg(segment)
             .invoke_async(&mut conn)
@@ -736,7 +756,9 @@ impl worklane_core::ScheduledStore for RedisBroker {
         let envelope = job.into_envelope();
         let blob = encode_envelope(&envelope)?;
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::enqueue_scheduled())
+        let ok: i64 = self
+            .scripts
+            .enqueue_scheduled
             .key(key)
             // Encode the i64 occurrence order-preservingly into a fixed-width
             // string (offset-binary: +2^63 maps i64→u64, then 20-digit
