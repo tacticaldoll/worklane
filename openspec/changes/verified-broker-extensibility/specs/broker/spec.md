@@ -1,15 +1,33 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: Minimal lifecycle broker contract
+### Requirement: Core broker contract is the job lifecycle
 
-The shared broker core SHALL contain only the operations required for the job
-lifecycle loop: enqueue, reserve, ack, retry, defer, extend, fail, and classify.
-Each operation SHALL preserve the existing lifecycle semantics for visibility,
-reservation receipts, stale resolution, attempts, dead-lettering, uniqueness,
-lanes, priority, and opaque envelopes.
+The `Broker` contract SHALL consist of the job-lifecycle operations only:
+enqueue, reserve, acknowledge, retry, defer, extend, fail, and job-state
+classification. Batch enqueue, dead-letter inspection/maintenance, queue-depth
+statistics, and scheduled enqueue SHALL NOT be part of the core contract; they
+are optional capabilities (see "Optional broker capabilities are discovered
+through accessors"). A type that implements the lifecycle operations SHALL be a
+valid `Broker` even if it provides no optional capability.
 
-Operations that are not required to run the lifecycle loop SHALL NOT be required
-by the core lifecycle trait.
+Each core operation SHALL preserve the existing lifecycle semantics for
+visibility, reservation receipts, stale resolution, attempts, dead-lettering,
+uniqueness, lanes, priority, and opaque envelopes. Operations that are not
+required to run the lifecycle loop SHALL NOT be required by the core contract.
+
+#### Scenario: A lifecycle-only broker is valid
+
+- **WHEN** a backend implements only the job-lifecycle operations and no optional
+  capability
+- **THEN** it SHALL satisfy the `Broker` contract
+- **AND** the worker core loop (reserve, dispatch, ack/retry/fail/dead-letter)
+  SHALL operate against it unchanged
+
+#### Scenario: Classification stays in the core contract
+
+- **WHEN** a caller holds any `Broker`
+- **THEN** job-state classification SHALL be available directly on the broker
+  without negotiating a capability
 
 #### Scenario: Core lifecycle implementation is sufficient
 
@@ -36,26 +54,43 @@ by the core lifecycle trait.
   behavior SHALL remain compatible with the existing broker requirements
 - **AND** its conformance tests for those lifecycle scenarios SHALL still pass
 
-### Requirement: Explicit optional broker capabilities
+### Requirement: Optional broker capabilities are discovered through accessors
 
-Behavior outside the minimal lifecycle loop SHALL be exposed through explicit
-optional capability traits. Optional capabilities include batch enqueue,
-dead-letter inspection and maintenance, queue-depth statistics, scheduled
-enqueue, and result storage when present.
+A `Broker` SHALL expose its optional capabilities through accessor methods that
+return an optional capability handle, defaulting to absent. The capabilities and
+their accessors SHALL be:
 
-A consumer that needs an optional capability SHALL request that capability
-explicitly and SHALL fail predictably when the selected broker does not provide
-it.
+- atomic batch enqueue via a `batch_enqueue` accessor returning an optional
+  borrow of a `BatchEnqueue`;
+- dead-letter inspection/maintenance (read, count, purge, requeue) via a
+  `dead_letter_store` accessor returning an optional borrow of a `DeadLetterStore`;
+- queue-depth statistics (pending count) via a `queue_stats` accessor returning
+  an optional borrow of a `QueueStats`;
+- scheduled enqueue via a `scheduled_store` accessor returning an optional owned
+  handle to a `ScheduledStore`.
 
-#### Scenario: Capability is present
+A broker that does not support a capability SHALL return absent from that
+accessor and SHALL remain a valid broker. A broker that supports a capability
+SHALL return a handle whose behavior conforms to the corresponding batch-enqueue,
+dead-letter, queue-stats, or scheduled-enqueue requirements in this
+specification. A consumer that needs an optional capability SHALL request it
+through the accessor and SHALL fail predictably with an explicit
+unsupported-capability result when the accessor returns absent.
 
-- **WHEN** a broker implements an optional capability trait
-- **THEN** a consumer that requests that capability SHALL be able to use it
-  through the public capability surface
-- **AND** the broker SHALL be eligible to run that capability's conformance
-  suite
+#### Scenario: A supported capability is advertised
 
-#### Scenario: Capability is absent
+- **WHEN** a broker supports dead-letter inspection
+- **THEN** its `dead_letter_store` accessor SHALL return a present handle
+- **AND** operations on that handle SHALL behave as the dead-letter read, count,
+  requeue, and purge requirements specify
+
+#### Scenario: An unsupported capability is absent
+
+- **WHEN** a broker does not support a given optional capability
+- **THEN** the corresponding accessor SHALL return absent
+- **AND** the broker SHALL still satisfy the core `Broker` contract
+
+#### Scenario: A consumer requests an absent capability
 
 - **WHEN** a consumer requests an optional capability from a broker that does not
   implement it
@@ -69,6 +104,75 @@ it.
 - **THEN** the core lifecycle semantics SHALL remain unchanged
 - **AND** mandatory lifecycle conformance SHALL NOT depend on that optional
   capability
+
+#### Scenario: Scheduled enqueue is acquired through the broker
+
+- **WHEN** a recurring scheduler is constructed from a broker that supports
+  scheduled enqueue
+- **THEN** it SHALL obtain the scheduled-store handle from the broker's
+  `scheduled_store` accessor
+- **AND** atomic scheduled enqueue SHALL behave as the scheduled-enqueue
+  requirements specify
+
+#### Scenario: First-party brokers expose their capabilities
+
+- **WHEN** any first-party broker (in-memory, SQLite, Postgres, Redis) is asked
+  for batch enqueue, dead-letter inspection, queue statistics, and scheduled
+  enqueue
+- **THEN** each accessor SHALL return a present handle
+
+### Requirement: Atomic batch enqueue
+
+Atomic batch enqueue SHALL be an optional broker capability rather than part of
+the core lifecycle contract. A broker that provides it (its `batch_enqueue`
+accessor returns present) SHALL provide an atomic `enqueue_batch` method that
+accepts multiple jobs and MUST ensure all-or-nothing insertion. A broker MAY omit the
+capability, in which case its `batch_enqueue` accessor SHALL return absent and a
+batch operation SHALL fail predictably with an unsupported-capability result
+rather than silently degrading.
+
+#### Scenario: All jobs visible
+- **WHEN** a batch of multiple jobs is successfully enqueued
+- **THEN** all jobs in the batch MUST be immediately available for reservation
+
+#### Scenario: Preservation of order
+- **WHEN** a batch of jobs is enqueued
+- **THEN** the returned `JobId` list MUST exactly match the input array's index order
+
+#### Scenario: Batch enqueue on a broker without the capability
+- **WHEN** a consumer requests batch enqueue from a broker whose `batch_enqueue`
+  accessor returns absent
+- **THEN** the operation SHALL return an explicit unsupported-capability result
+- **AND** no jobs SHALL be persisted
+
+### Requirement: Batch unique key deduplication
+
+A broker that provides the batch-enqueue capability SHALL handle `unique_key`
+deduplication within a batch without failing the batch insertion.
+
+Concurrent batches MUST NOT deadlock or spuriously fail because their unique
+keys overlap. When two batches are enqueued concurrently and share one or more
+unique keys — in any relative order — each batch SHALL complete: every shared
+key deduplicates to a single live job, and neither batch surfaces a deadlock or
+lock-ordering error to the caller.
+
+#### Scenario: Collision with an existing live job
+- **WHEN** a job in a batch has a unique key identical to an existing live job
+- **THEN** the broker MUST NOT abort the batch and SHALL return the existing
+  `JobId` for that specific job
+
+#### Scenario: Intra-batch collision deduplication
+- **WHEN** two jobs within the same batch share the same unique key
+- **THEN** the first job SHALL be inserted normally, and the second job SHALL
+  receive the `JobId` of the first job
+
+#### Scenario: Concurrent overlapping batches do not deadlock
+- **WHEN** two batches are enqueued concurrently and their unique keys overlap
+  in opposite order (one batch lists `[A, B]`, the other `[B, A]`)
+- **THEN** both batches SHALL complete without a deadlock or lock-ordering error
+- **AND** each shared key SHALL deduplicate to a single live job
+
+## ADDED Requirements
 
 ### Requirement: Portable broker contract changes
 
