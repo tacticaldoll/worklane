@@ -39,8 +39,8 @@ pub use workflow::{FanInWatcherJob, FanInWatcherPayload};
 pub use async_trait::async_trait;
 
 pub use worklane_core::{
-    Broker, Cancellation, Clock, DEFAULT_LANE, DeadLetter, DeadLetterStore, Error, HandlerError,
-    HandlerResult, Job, JobContext, JobEnvelope, JobId, JobIdParseError, JobState, Lane, LaneError,
-    NewJob, PayloadStore, QueueStats, Reservation, ReservationReceipt, Result, ResultStore,
-    RetryPolicy, ScheduledStore, SystemClock, WallClock, from_payload, to_payload,
+    BatchEnqueue, Broker, Cancellation, Clock, DEFAULT_LANE, DeadLetter, DeadLetterStore, Error,
+    HandlerError, HandlerResult, Job, JobContext, JobEnvelope, JobId, JobIdParseError, JobState,
+    Lane, LaneError, NewJob, PayloadStore, QueueStats, Reservation, ReservationReceipt, Result,
+    ResultStore, RetryPolicy, ScheduledStore, SystemClock, WallClock, from_payload, to_payload,
 };

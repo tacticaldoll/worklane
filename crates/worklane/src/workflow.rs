@@ -438,7 +438,8 @@ impl Job for FanInWatcherJob {
         let callback_id = callback_job.id;
         let callback_payload = callback_job.payload.clone();
 
-        if let Err(err) = self.client.broker.enqueue_batch(vec![callback_job]).await {
+        let batch_result = self.client.enqueue_batch(vec![callback_job]).await;
+        if let Err(err) = batch_result {
             self.client
                 .cleanup_offload(
                     callback_id,

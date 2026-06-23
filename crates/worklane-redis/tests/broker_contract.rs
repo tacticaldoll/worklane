@@ -114,7 +114,7 @@ impl TimedBrokerContractHarness for TimedRedisHarness {
     }
 }
 
-macro_rules! redis_required {
+macro_rules! redis_capability {
     ($($name:ident),* $(,)?) => {$(
         #[tokio::test]
         async fn $name() {
@@ -148,9 +148,13 @@ macro_rules! redis_timed {
     )*};
 }
 
-// Enumerate both tiers from the single-source drivers in `worklane-test`, so
-// Redis runs an identical scenario set to every other backend and a scenario can
-// never be silently dropped from this list. `redis_required!` / `redis_timed!`
-// supply the env-gated harness wiring per name.
-worklane_test::for_each_required_scenario!(redis_required);
+// Enumerate lifecycle, optional capability, and timed batteries from the
+// single-source drivers in `worklane-test`, so Redis runs an identical supported
+// scenario set to every other first-party backend and a scenario can never be
+// silently dropped from this list.
+worklane_test::for_each_lifecycle_scenario!(redis_capability);
+worklane_test::for_each_dead_letter_scenario!(redis_capability);
+worklane_test::for_each_queue_stats_scenario!(redis_capability);
+worklane_test::for_each_batch_enqueue_scenario!(redis_capability);
+worklane_test::for_each_scheduled_scenario!(redis_capability);
 worklane_test::for_each_timed_scenario!(redis_timed);

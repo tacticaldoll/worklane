@@ -4,7 +4,11 @@ use worklane_core::{Broker, DeadLetterStore, Error, NewJob};
 
 /// Requeue makes a dead-lettered job reservable on its original lane again and
 /// removes it from the dead-letter store.
-pub async fn requeue_makes_reservable_again<H: BrokerContractHarness>(h: &H) {
+pub async fn requeue_makes_reservable_again<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id = dead_letter(b.as_ref(), job("critical"), "boom").await;
     b.requeue(id).await.expect("a dead-lettered job requeues");
@@ -22,7 +26,11 @@ pub async fn requeue_makes_reservable_again<H: BrokerContractHarness>(h: &H) {
 
 /// Requeue preserves the opaque envelope: the re-reserved job matches the
 /// original payload, kind, and max_attempts.
-pub async fn requeue_preserves_opaque_envelope<H: BrokerContractHarness>(h: &H) {
+pub async fn requeue_preserves_opaque_envelope<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let payload = vec![0u8, 159, 146, 150, 255, 0, 1, 2, 254];
     let id = dead_letter(
@@ -55,7 +63,11 @@ pub async fn requeue_preserves_opaque_envelope<H: BrokerContractHarness>(h: &H) 
 /// the key is free: a subsequent enqueue with that key deduplicates to the
 /// requeued job. (The key was released when the job was dead-lettered, so requeue
 /// must actively reclaim it.)
-pub async fn requeue_reacquires_free_unique_key<H: BrokerContractHarness>(h: &H) {
+pub async fn requeue_reacquires_free_unique_key<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id1 = b
         .enqueue(job("default").with_unique_key("k"))
@@ -79,7 +91,11 @@ pub async fn requeue_reacquires_free_unique_key<H: BrokerContractHarness>(h: &H)
 /// another live job (legitimately, since the key was released at fail). The
 /// rejection is a `UniqueKeyHeld` error that leaves both the dead job and the
 /// live holder untouched.
-pub async fn requeue_conflicts_when_unique_key_held<H: BrokerContractHarness>(h: &H) {
+pub async fn requeue_conflicts_when_unique_key_held<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id1 = b
         .enqueue(job("default").with_unique_key("k"))
@@ -117,7 +133,11 @@ pub async fn requeue_conflicts_when_unique_key_held<H: BrokerContractHarness>(h:
 /// Requeue is rejected when the dead-lettered job's id is already live again.
 /// The dead record stays available for inspection and the live holder is not
 /// disturbed.
-pub async fn requeue_conflicts_when_job_id_is_live<H: BrokerContractHarness>(h: &H) {
+pub async fn requeue_conflicts_when_job_id_is_live<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id = dead_letter(b.as_ref(), job("requeue_id"), "boom").await;
 
@@ -157,7 +177,11 @@ pub async fn requeue_conflicts_when_job_id_is_live<H: BrokerContractHarness>(h: 
 }
 
 /// Requeue of an unknown job id is rejected and changes nothing.
-pub async fn requeue_unknown_rejected<H: BrokerContractHarness>(h: &H) {
+pub async fn requeue_unknown_rejected<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id = dead_letter(b.as_ref(), job("critical"), "boom").await;
     b.requeue(worklane_core::JobId::new())

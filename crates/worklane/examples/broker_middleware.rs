@@ -18,8 +18,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use worklane::{
-    Broker, Client, HandlerResult, Job, JobContext, JobId, JobState, Lane, NewJob, Reservation,
-    ReservationReceipt, Result, Worker, async_trait,
+    BatchEnqueue, Broker, Client, Error, HandlerResult, Job, JobContext, JobId, JobState, Lane,
+    NewJob, Reservation, ReservationReceipt, Result, Worker, async_trait,
 };
 use worklane_memory::InMemoryBroker;
 
@@ -44,6 +44,19 @@ impl<B> AuditBroker<B> {
 }
 
 #[async_trait]
+impl<B: Broker> BatchEnqueue for AuditBroker<B> {
+    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
+        let batch = self
+            .inner
+            .batch_enqueue()
+            .ok_or_else(|| Error::UnsupportedCapability("batch enqueue".into()))?;
+        let ids = batch.enqueue_batch(jobs).await?;
+        self.enqueued.fetch_add(ids.len() as u64, Ordering::Relaxed);
+        Ok(ids)
+    }
+}
+
+#[async_trait]
 impl<B: Broker> Broker for AuditBroker<B> {
     // --- intercepted methods -------------------------------------------------
     async fn enqueue(&self, job: NewJob) -> Result<JobId> {
@@ -58,8 +71,10 @@ impl<B: Broker> Broker for AuditBroker<B> {
     }
 
     // --- forwarded methods ---------------------------------------------------
-    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
-        self.inner.enqueue_batch(jobs).await
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        self.inner
+            .batch_enqueue()
+            .map(|_| self as &dyn BatchEnqueue)
     }
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {
         self.inner.reserve(lane).await
