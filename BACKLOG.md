@@ -20,6 +20,13 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **CLI job classification** (`cli-classify`) — `wl classify <job-id>` reports a
+  job's lifecycle state (`Live` / `DeadLettered` / `CompletedOrUnknown`) via the
+  existing `Broker::classify` point lookup, as a human-readable line or
+  `--format json`. The id is parsed at the CLI layer so an invalid id exits
+  non-zero before any broker connection opens. CLI-only — no `Broker` trait or
+  `worklane-core` change. Completes the operator's by-id lifecycle question
+  alongside the existing `stats` and `dead-letters` commands.
 - ✓ **Verified broker extensibility** (`verified-broker-extensibility`, 0.2.0) —
   the `Broker` contract is now an explicit minimal lifecycle core (enqueue,
   reserve, ack, retry, defer, extend, fail, classify) plus opt-in capability
@@ -91,10 +98,13 @@ patterns are built *on top* of core primitives.
   production-facing guide. The guide should point to the OpenSpec capabilities
   as the source of truth rather than creating a second contract.
 - **Operator lifecycle inspection** — grow the CLI around lifecycle questions
-  before building a dashboard: pending/running/delayed/failed counts, dead-letter
-  inspection, job classification, requeue, lane health, and storage diagnostics.
-  These commands should expose what already exists in the contract before they
-  justify new broker surface.
+  before building a dashboard. Shipped so far: lane health (`stats`),
+  dead-letter inspection/requeue/purge (`dead-letters`), and job classification
+  (`classify`, see *Shipped*). Remaining ideas — richer counts
+  (running/delayed/failed) and storage diagnostics — would need new broker
+  surface (`QueueStats` exposes only `pending_count` today), so they are gated on
+  a real consumer rather than added speculatively. These commands should expose
+  what already exists in the contract before they justify new broker surface.
 - **Production patterns documentation** — collect application-level recipes for
   idempotent handlers, transactional enqueue, outbox integration, rate limiting,
   fan-out/fan-in, webhooks, and cancellation. Patterns that can be handlers,
