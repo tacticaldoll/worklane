@@ -1,10 +1,11 @@
 # worklane
 
-> Typed background jobs for Rust services.
+> Conformance-verified background jobs for Rust services.
 
 `worklane` is a small, Rust-native async background job runner: enqueue typed
 jobs and run workers with retries, ack/fail semantics, dead-lettering, and
-pluggable brokers.
+pluggable brokers whose lifecycle behavior is verified by one shared
+conformance suite.
 
 > **Status: 0.1.0 baseline.** The core loop is solid across four brokers — in-memory,
 > SQLite, PostgreSQL, and Redis — all passing a shared conformance suite: typed
@@ -50,6 +51,13 @@ between them without behavior surprises, and — once the broker SPI is opened �
 third parties can add a backend that *provably* behaves the same. It
 intentionally does less (no exchange/routing model, no broad transport list) so
 that what it does is small, typed, and conformance-checked.
+
+## When not to use worklane
+
+`worklane` is not a general message bus, a Kafka-style event stream, or a
+workflow engine at the broker layer. It does not promise exactly-once execution
+or remove the need for idempotent handlers. Use it when you want typed
+background jobs with verified lifecycle semantics across supported backends.
 
 ## Core loop
 
