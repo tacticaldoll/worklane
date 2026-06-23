@@ -938,10 +938,11 @@ are optional capabilities (see "Optional broker capabilities are discovered
 through accessors"). A type that implements the lifecycle operations SHALL be a
 valid `Broker` even if it provides no optional capability.
 
-Each core operation SHALL preserve the existing lifecycle semantics for
-visibility, reservation receipts, stale resolution, attempts, dead-lettering,
-uniqueness, lanes, priority, and opaque envelopes. Operations that are not
-required to run the lifecycle loop SHALL NOT be required by the core contract.
+Each core operation SHALL uphold the lifecycle semantics for visibility,
+reservation receipts, stale resolution, attempts, dead-lettering, uniqueness,
+lanes, priority, and opaque envelopes defined elsewhere in this specification.
+Operations that are not required to run the lifecycle loop SHALL NOT be required
+by the core contract.
 
 #### Scenario: A lifecycle-only broker is valid
 
@@ -963,7 +964,7 @@ required to run the lifecycle loop SHALL NOT be required by the core contract.
   capability traits
 - **THEN** a client SHALL be able to enqueue a job
 - **AND** a worker SHALL be able to reserve, run, ack, retry, defer, extend, or
-  fail that job according to the existing lifecycle semantics
+  fail that job according to the lifecycle semantics in this specification
 - **AND** the broker SHALL be eligible to run the mandatory lifecycle
   conformance suite
 
@@ -974,13 +975,6 @@ required to run the lifecycle loop SHALL NOT be required by the core contract.
 - **THEN** it SHALL still be a valid lifecycle broker
 - **AND** code requiring dead-letter inspection SHALL detect that the capability
   is absent instead of assuming the core broker provides it
-
-#### Scenario: Lifecycle semantics are unchanged
-
-- **WHEN** a first-party broker is migrated to the split contract
-- **THEN** its enqueue, reserve, ack, retry, defer, extend, fail, and classify
-  behavior SHALL remain compatible with the existing broker requirements
-- **AND** its conformance tests for those lifecycle scenarios SHALL still pass
 
 ### Requirement: Optional broker capabilities are discovered through accessors
 
