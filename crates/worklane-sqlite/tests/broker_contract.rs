@@ -89,9 +89,10 @@ impl TimedBrokerContractHarness for TimedSqliteHarness {
     }
 }
 
-// Draw both tiers from the single-source drivers in `worklane-test`; the emitter
-// turns each name into a `#[tokio::test]` against a fresh durable harness.
-macro_rules! emit_required {
+// Draw lifecycle and optional capability batteries from the single-source
+// drivers in `worklane-test`; the emitter turns each name into a `#[tokio::test]`
+// against a fresh durable harness.
+macro_rules! emit_capability {
     ($($name:ident),* $(,)?) => {
         $(worklane_test::contract_tests!(SqliteHarness::new(); $name);)*
     };
@@ -101,5 +102,9 @@ macro_rules! emit_timed {
         $(worklane_test::contract_tests!(TimedSqliteHarness::new(); $name);)*
     };
 }
-worklane_test::for_each_required_scenario!(emit_required);
+worklane_test::for_each_lifecycle_scenario!(emit_capability);
+worklane_test::for_each_dead_letter_scenario!(emit_capability);
+worklane_test::for_each_queue_stats_scenario!(emit_capability);
+worklane_test::for_each_batch_enqueue_scenario!(emit_capability);
+worklane_test::for_each_scheduled_scenario!(emit_capability);
 worklane_test::for_each_timed_scenario!(emit_timed);

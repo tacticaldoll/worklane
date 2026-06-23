@@ -8,8 +8,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use worklane::{
-    Broker, Client, Error, HandlerResult, Job, JobContext, JobId, Lane, NewJob, Reservation,
-    ReservationReceipt, Result, Worker, async_trait,
+    BatchEnqueue, Broker, Client, Error, HandlerResult, Job, JobContext, JobId, Lane, NewJob,
+    Reservation, ReservationReceipt, Result, Worker, async_trait,
 };
 use worklane_memory::InMemoryBroker;
 
@@ -54,12 +54,23 @@ impl FlakyBroker {
 }
 
 #[async_trait]
+impl BatchEnqueue for FlakyBroker {
+    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
+        self.inner
+            .batch_enqueue()
+            .expect("in-memory broker supports batch enqueue")
+            .enqueue_batch(jobs)
+            .await
+    }
+}
+
+#[async_trait]
 impl Broker for FlakyBroker {
     async fn enqueue(&self, job: NewJob) -> Result<JobId> {
         self.inner.enqueue(job).await
     }
-    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
-        self.inner.enqueue_batch(jobs).await
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        Some(self)
     }
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {
         self.reserves.fetch_add(1, Ordering::SeqCst);
