@@ -44,6 +44,14 @@ classify. Optional surfaces such as batch enqueue, dead-letter inspection,
 queue-depth stats, scheduled enqueue, and result storage will live behind
 separate capability traits.
 
+The concrete move for 0.2.0 is small because the capability-accessor shape
+already exists: `DeadLetterStore`, `QueueStats`, and `ScheduledStore` are
+already separate traits reached through accessors on `Broker`, and result
+storage is already a per-broker concern outside the trait. The one core method
+that must be demoted is `enqueue_batch` (today a required `Broker` method) into
+a new `BatchEnqueue` capability — not every backend can offer atomic batch
+insert, so it does not belong in the required core.
+
 This is a breaking pre-1.0 API change, but it reduces the long-term contract to
 the minimum every backend can implement uniformly. SQL implementations can map
 the core to transactional row updates with receipt checks; Redis can map the
@@ -60,6 +68,55 @@ Alternatives considered:
 - Make optional operations best-effort methods on the core trait. Rejected
   because best-effort methods blur portability claims.
 
+### Expose optional capabilities through `Option<&dyn Cap>` accessors
+
+Each optional capability is its own trait, reached through a defaulted accessor
+on the core trait that returns `Option<&dyn Cap>` (or `Option<Arc<dyn Cap>>`
+when the consumer must retain the handle, as `ScheduledStore` already does). A
+backend opts in by implementing the trait and overriding the accessor to return
+`Some(self)`; a backend that does not support the capability inherits the
+`None` default. A consumer that needs a capability requests it through the
+accessor and fails predictably on `None`. This is the mechanism already used by
+`DeadLetterStore`/`QueueStats`/`ScheduledStore`; the change generalizes it and
+adds `BatchEnqueue`.
+
+**Portability argument (required by the `broker` spec's "Portable broker
+contract changes").** The `worklane` facade holds the broker as
+`Arc<dyn Broker>`, so the capability mechanism must be object-safe and must let
+a consumer discover an absent capability *without naming a concrete backend
+type* (third-party brokers must stay discoverable). An accessor returning
+`Option<&dyn Cap>` is object-safe (the accessor itself is monomorphic), works
+behind `Arc<dyn>`, and signals absence by `None` against the capability trait —
+never against a concrete type. SQL, Redis, and in-memory backends all express
+"capability present" identically (implement the trait, return `Some(self)`), so
+the mechanism is uniform across every backend.
+
+Alternatives considered (prior art surveyed):
+
+- **Supertrait + static capability bounds** (e.g. apalis 1.0-rc: a minimal
+  `Backend` plus ~15 capability super-traits, gated by `where B: Cap`).
+  Elegant — "the type system is the capability matrix" — but it drives static
+  dispatch and is incompatible with the facade's `Arc<dyn Broker>` object model
+  (the sqlx lesson: rich associated-type/bound-gated capability sets push a
+  contract off `dyn` entirely). Rejected: it would force `Client`/`Worker` to
+  become generic over capability sets, rippling a breaking change across the
+  whole workspace.
+- **`Any` downcast from `dyn Broker` to the concrete type.** Object-safe, but
+  the consumer must name the concrete backend type to recover a capability,
+  which couples consumers to specific backends and makes a new third-party
+  backend invisible until consumers are recompiled. Rejected as an anti-pattern
+  for an extension point that must stay open.
+- **`core::error::Request` / Provider API.** The best-shaped "provide a
+  type-erased optional value from behind a trait object" primitive, but it is
+  nightly-only after ~4 years and has been narrowed to `Error` context only —
+  unusable on stable. Rejected for now.
+- **OpenDAL-style runtime `Capability` flag struct** (bool flags read before
+  acting). A genuinely useful *introspection-without-a-handle* mechanism
+  (e.g. a future CLI "what can this broker do?"), but complementary rather than
+  a replacement, and it carries flag/impl drift risk if made primary. Deferred
+  under *least commitment* until a consumer needs to branch on capabilities
+  without obtaining the handle; the accessor remains the primary mechanism.
+
 ### Make conformance modular by capability
 
 `worklane-test` will expose a mandatory lifecycle suite and optional suites for
@@ -72,12 +129,41 @@ author's test wiring rather than silently passing. This keeps compatibility
 claims precise: "passes lifecycle core" is different from "passes lifecycle
 core plus scheduled enqueue and dead-letter inspection."
 
+**Shape: a capability-gated shared suite, exported for third-party use.** This
+is the dominant industry pattern for backend conformance, and the survey
+(River's `Exercise`, apalis's `generic_storage_test!`/`test_message_queue!`
+macros, Temporal's store-parameterized suites, Kubernetes CSI `csi-sanity`,
+JobRunr's published test fixtures) converges on the same three properties:
+
+1. **One mandatory lifecycle battery** asserted only through the minimal
+   lifecycle trait plus a harness adapter — every broker runs it.
+2. **One battery per optional capability**, run only when the broker provides
+   that capability (its accessor returns `Some`), asserted only through that
+   capability's trait. This mirrors CSI's "declare capability → suite
+   self-selects" and River's listener battery that runs only when
+   `SupportsListener()`.
+3. **Skips are visible, not silent.** A capability the broker does not opt into
+   is reported as skipped (in test wiring output and the conformance matrix),
+   so a passing run never implies untested capability support. This satisfies
+   the `broker-extensibility` spec's "Optional capability is omitted visibly"
+   scenario.
+
+The suite is exported from `worklane-test` (already a published crate) so a
+private or third-party broker calls the lifecycle battery and any capability
+batteries it qualifies for from its own tests — the apalis/JobRunr delivery
+model. A broker's compatibility claim is then exactly the set of batteries it
+runs and passes.
+
 Alternatives considered:
 
 - Keep one required monolithic suite. Rejected because it forces optional
   capabilities onto every broker and makes partial, honest compatibility hard.
 - Let broker authors hand-pick individual scenarios. Rejected because it makes
   compatibility claims non-comparable.
+- Gate batteries by Cargo feature instead of capability presence. Rejected
+  because capability support is a property of the broker value, not a
+  compile-time choice of the test crate; gating on the accessor keeps the claim
+  tied to what the broker actually implements.
 
 ### Treat `worklane_core::spi` as broker-author API
 
@@ -148,6 +234,11 @@ follow-up breaking release.
 
 - Exact trait names are implementation-level and may be finalized during apply,
   but the capability boundaries are fixed by the delta specs before apply.
-- The result-store suite already exists separately; apply should decide whether
-  the conformance matrix presents it under broker capabilities or adjacent
-  storage capabilities.
+- **Result storage access (resolution path).** Result storage stays a
+  per-broker concern *outside* the `Broker` trait for now (it is never reached
+  through `Arc<dyn Broker>` today, so promoting it to an accessor has no
+  consumer — *least commitment*). The conformance matrix presents it as a
+  storage-adjacent capability rather than a core broker capability. Revisit
+  only if the modular conformance work in §3 needs result storage reached
+  uniformly through the trait to slot it into a capability battery; that
+  decision MUST be resolved before sync.

@@ -25,14 +25,20 @@
 
 ## 3. Modular Conformance
 
-- [ ] 3.1 Split `worklane-test` broker scenarios into mandatory lifecycle and
-  optional capability suites.
-- [ ] 3.2 Update harness traits and macros so brokers can run lifecycle-only
-  conformance or opt into capability suites.
+- [ ] 3.1 Restructure `worklane-test` into one mandatory lifecycle battery
+  (asserting only through the minimal lifecycle trait + harness adapter) and one
+  battery per optional capability (batch enqueue, dead-letter inspection, queue
+  stats, scheduled enqueue; result storage stays storage-adjacent per design).
+- [ ] 3.2 Gate each capability battery on capability *presence* (the broker's
+  accessor returns `Some`), not on a Cargo feature, so the claim is tied to what
+  the broker actually implements. Export the batteries from `worklane-test` so a
+  third-party broker can call the lifecycle battery and any qualifying capability
+  batteries from its own tests (River `Exercise` / apalis `test_utils` model).
 - [ ] 3.3 Update all first-party broker contract tests to enumerate the shared
-  lifecycle and capability suites from a single source.
-- [ ] 3.4 Ensure omitted optional capability suites are visible in test wiring,
-  documentation, or the conformance matrix.
+  lifecycle and capability batteries from a single source.
+- [ ] 3.4 Make omitted optional capabilities visible (reported as skipped in test
+  wiring output and reflected in the conformance matrix), never silently passed,
+  satisfying the `broker-extensibility` "omitted visibly" scenario.
 
 ## 4. Documentation
 
