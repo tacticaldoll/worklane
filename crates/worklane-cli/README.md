@@ -18,6 +18,9 @@ cargo install worklane-cli   # installs the `wl` binary
 # Lane health: pending + dead-letter counts
 wl --broker sqlite --db ./jobs.db stats default
 
+# Classify a job's lifecycle state by id (Live / DeadLettered / CompletedOrUnknown)
+wl --broker sqlite --db ./jobs.db classify <uuid>          # --format json for scripts
+
 # Inspect dead letters (jsonl default, or --format table)
 wl --broker postgres --url $DATABASE_URL dead-letters list critical --limit 20
 
