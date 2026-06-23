@@ -81,4 +81,6 @@
 - [x] 7.2 Full conformance: run the Postgres + Redis conformance suites against
       live containers (a rename must not alter broker behavior) plus the full
       `cargo test` workspace run.
-- [ ] 7.3 Update `BACKLOG.md` with the ✓ shipped status after archiving.
+- [x] 7.3 Update `BACKLOG.md` with the ✓ shipped status after archiving — N/A:
+      this is a clean-room rename with no corresponding BACKLOG feature item to
+      mark shipped.
