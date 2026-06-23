@@ -40,6 +40,20 @@ impl Client {
         }
     }
 
+    /// Enqueue a batch through the broker's
+    /// [`BatchEnqueue`](worklane_core::BatchEnqueue) capability.
+    ///
+    /// Returns [`Error::UnsupportedCapability`](worklane_core::Error::UnsupportedCapability)
+    /// when the configured broker does not provide batch enqueue. Internal helper
+    /// behind the public batch and fan-in APIs so the capability lookup and its
+    /// absence error live in exactly one place.
+    pub(crate) async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
+        match self.broker.batch_enqueue() {
+            Some(cap) => cap.enqueue_batch(jobs).await,
+            None => Err(Error::UnsupportedCapability("batch enqueue".into())),
+        }
+    }
+
     /// Set an optional result store to retrieve job outputs (builder style).
     #[must_use = "this value must be used"]
     pub fn with_result_store(mut self, result_store: Arc<dyn worklane_core::ResultStore>) -> Self {
@@ -305,6 +319,11 @@ impl Client {
     /// This uses the default [`FanInPolicy`](crate::workflow::FanInPolicy) (poll
     /// every 10s for up to ~24h). Use [`fan_in_with_policy`](Self::fan_in_with_policy)
     /// to tune the poll cadence or the pending-window bound.
+    ///
+    /// Requires the broker to provide the
+    /// [`BatchEnqueue`](worklane_core::BatchEnqueue) capability; returns
+    /// [`Error::UnsupportedCapability`](worklane_core::Error::UnsupportedCapability)
+    /// when it does not.
     pub async fn fan_in<CB, C>(
         &self,
         fanin_id: String,
@@ -324,6 +343,11 @@ impl Client {
     /// cadence (`poll_delay_secs`) and the maximum number of polls
     /// (`max_generations`) before the fan-in fails. The worst-case wall-clock a
     /// fan-in stays pending is `poll_delay_secs * max_generations`.
+    ///
+    /// Requires the broker to provide the
+    /// [`BatchEnqueue`](worklane_core::BatchEnqueue) capability; returns
+    /// [`Error::UnsupportedCapability`](worklane_core::Error::UnsupportedCapability)
+    /// when it does not.
     pub async fn fan_in_with_policy<CB, C>(
         &self,
         fanin_id: String,
@@ -418,7 +442,8 @@ impl Client {
             .iter()
             .map(|job| (job.id, job.payload.clone()))
             .collect();
-        if let Err(err) = self.broker.enqueue_batch(batch).await {
+        let batch_result = self.enqueue_batch(batch).await;
+        if let Err(err) = batch_result {
             self.cleanup_offloads(
                 submitted
                     .iter()
@@ -447,7 +472,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use std::collections::HashSet;
     use std::sync::Mutex;
-    use worklane_core::{JobContext, JobState, PayloadStore, ResultStore};
+    use worklane_core::{BatchEnqueue, JobContext, JobState, PayloadStore, ResultStore};
     use worklane_memory::InMemoryBroker;
 
     #[derive(Serialize, Deserialize)]
@@ -501,13 +526,20 @@ mod tests {
     struct FailingBroker;
 
     #[async_trait]
+    impl BatchEnqueue for FailingBroker {
+        async fn enqueue_batch(&self, _jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
+            Err(Error::Broker("forced batch enqueue failure".to_string()))
+        }
+    }
+
+    #[async_trait]
     impl Broker for FailingBroker {
         async fn enqueue(&self, _job: NewJob) -> Result<JobId> {
             Err(Error::Broker("forced enqueue failure".to_string()))
         }
 
-        async fn enqueue_batch(&self, _jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
-            Err(Error::Broker("forced batch enqueue failure".to_string()))
+        fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+            Some(self)
         }
 
         async fn reserve(&self, _lane: &Lane) -> Result<Option<worklane_core::Reservation>> {

@@ -34,8 +34,8 @@ use async_trait::async_trait;
 use deadpool_postgres::Pool;
 use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
 use worklane_core::{
-    Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation, ReservationReceipt, Result,
-    RetentionPolicy, UnboundedDlqWarning, WallClock,
+    BatchEnqueue, Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation,
+    ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
 };
 
 mod conn;
@@ -425,16 +425,7 @@ impl PostgresBroker {
 }
 
 #[async_trait]
-impl Broker for PostgresBroker {
-    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
-        let available_at = nanos(self.clock.now().saturating_add(job.delay));
-        let mut client = self.client().await?;
-        let tx = Self::begin(&mut client).await?;
-        let id = self.insert_job(&tx, job, available_at).await?;
-        tx.commit().await.map_err(pg_err)?;
-        Ok(id)
-    }
-
+impl BatchEnqueue for PostgresBroker {
     async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
         let now_d = self.clock.now();
         let mut client = self.client().await?;
@@ -466,6 +457,22 @@ impl Broker for PostgresBroker {
         }
         tx.commit().await.map_err(pg_err)?;
         Ok(ids)
+    }
+}
+
+#[async_trait]
+impl Broker for PostgresBroker {
+    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
+        let available_at = nanos(self.clock.now().saturating_add(job.delay));
+        let mut client = self.client().await?;
+        let tx = Self::begin(&mut client).await?;
+        let id = self.insert_job(&tx, job, available_at).await?;
+        tx.commit().await.map_err(pg_err)?;
+        Ok(id)
+    }
+
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        Some(self)
     }
 
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {

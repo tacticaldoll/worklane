@@ -18,10 +18,10 @@ use crate::ManualClock;
 /// trait itself.
 #[async_trait]
 pub trait BrokerContractHarness: Send + Sync {
-    /// The broker implementation under test. The conformance suite exercises the
-    /// full contract, so a tested broker must provide the optional dead-letter
-    /// and queue-stats capabilities in addition to the core `Broker` trait.
-    type Broker: Broker + DeadLetterStore + QueueStats;
+    /// The broker implementation under test. The mandatory lifecycle suite only
+    /// requires the core [`Broker`] trait; optional capability suites add their
+    /// own bounds when a broker opts into them.
+    type Broker: Broker;
 
     /// The broker for this scenario.
     fn broker(&self) -> Arc<Self::Broker>;

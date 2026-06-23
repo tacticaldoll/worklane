@@ -63,6 +63,11 @@ impl<'a> JobBuilder<'a> {
     }
 
     /// Fan out this job configuration across multiple lanes as an atomic batch.
+    ///
+    /// Requires the broker to provide the
+    /// [`BatchEnqueue`](worklane_core::BatchEnqueue) capability; returns
+    /// [`Error::UnsupportedCapability`](worklane_core::Error::UnsupportedCapability)
+    /// when it does not.
     pub async fn enqueue_to_lanes(
         self,
         lanes: impl IntoIterator<Item = Lane>,
@@ -96,7 +101,7 @@ impl<'a> JobBuilder<'a> {
             .iter()
             .map(|job| (job.id, job.payload.clone()))
             .collect();
-        let returned = match self.client.broker.enqueue_batch(jobs).await {
+        let returned = match self.client.enqueue_batch(jobs).await {
             Ok(returned) => returned,
             Err(err) => {
                 self.client
