@@ -222,7 +222,7 @@ embedded in collision-significant or pattern-significant key positions.)
 #### Scenario: Unique key is opaque
 
 - **WHEN** two jobs are enqueued with the same unique key containing `:` and glob
-  metacharacters (for example `"chord:abc-*?[]:42"`) while the first is live
+  metacharacters (for example `"fanin:abc-*?[]:42"`) while the first is live
 - **THEN** the second `enqueue` SHALL dedup to the first job's `JobId`
 - **AND** a job enqueued with a different such key SHALL create a distinct job
 - **AND** no backend SHALL reject the key for its characters
