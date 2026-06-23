@@ -5,6 +5,32 @@ All notable changes to `worklane` are documented here, following
 versioning. While the project is pre-1.0, minor releases may include breaking
 changes.
 
+## [0.2.0]
+
+Clean-room rename of the workflow-composition API to neutral fan-in/fan-out
+vocabulary. Behavior is unchanged; only names change.
+
+### Changed
+
+- **BREAKING:** renamed the workflow-composition public API:
+  - `Canvas` trait → `Workflow`
+  - `ChordResults` → `FanInResults`
+  - `ChordPolicy` → `FanInPolicy`
+  - `Client::chord` → `Client::fan_in`
+  - `Client::chord_with_policy` → `Client::fan_in_with_policy`
+
+  Migration is a mechanical rename — no signature or behavior changes.
+- Renamed the doc-hidden watcher types `ChordWatcherJob`/`ChordWatcherPayload`
+  → `FanInWatcherJob`/`FanInWatcherPayload`, the durable watcher job kind
+  `worklane:chord_watcher` → `worklane:fan_in_watcher`, and the internal
+  unique-key prefixes `chain:`/`chord:`/`cw:` → `sequence:`/`fanin:`/`fiw:`.
+- Renamed the `workflow-canvas` capability spec to `workflow`.
+
+### Upgrade note
+
+Drain workers before upgrading if any fan-in is in flight: the renamed watcher
+job kind and key prefixes do not carry an in-flight watcher across the upgrade.
+
 ## [0.1.0]
 
 Initial public baseline.

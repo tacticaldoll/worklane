@@ -12,7 +12,7 @@ description = "Optional topic-to-lane fan-out layer built on the worklane facade
 readme = "README.md"
 
 [dependencies]
-worklane = { path = "../worklane", version = "0.1.0" }
+worklane = { path = "../worklane", version = "0.2.0" }
 tracing.workspace = true
 
 [dev-dependencies]

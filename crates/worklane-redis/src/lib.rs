@@ -303,8 +303,8 @@ impl Broker for RedisBroker {
         // the `ns:dead:job:{id}` HASH) it appears only as the terminal segment of
         // `ns:unique:{key}` in exact-match GET/SET/DEL, never in a SCAN/glob
         // position, so no character can collide or be interpreted as a pattern.
-        // The framework deliberately fills it with `:`-bearing values (chord and
-        // chain idempotency keys, scheduled-fire keys). Empty (no key) is unchanged.
+        // The framework deliberately fills it with `:`-bearing values (fan-in and
+        // sequence idempotency keys, scheduled-fire keys). Empty (no key) is unchanged.
         let id = job.id;
         let envelope = job.into_envelope();
         let blob = encode_envelope(&envelope)?;
