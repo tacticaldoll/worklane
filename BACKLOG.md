@@ -20,6 +20,17 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **Redis hot-path script cache** — `RedisBroker` now builds and SHA1-hashes
+  each lifecycle Lua script exactly once at construction (a `scripts::Scripts`
+  struct populated in `connect_with_namespace`, the Redis analogue of the
+  Postgres `Queries` precompute) and reuses the cached `redis::Script` on every
+  call, instead of re-running `format!`+`Script::new` (string concat + SHA1) per
+  call on the throughput-critical consume loop. All 13 call sites — the enqueue
+  family, reserve/ack/retry/defer/fail/extend, requeue, purge_dead,
+  pending_count, and the previously inline `classify` literal (now a `CLASSIFY`
+  const) — share the cached values. Behavior-preserving (no script body, key
+  layout, or `KEYS`/`ARGV` change); the `worklane-test` Redis conformance suite
+  passes unchanged as the regression gate.
 - ✓ **Verified release package gate** — the CI package job verifies packaged
   workspace tarballs with `cargo package --workspace` in an isolated target
   directory, so registry-style dependency resolution and stale package artifacts
@@ -146,12 +157,41 @@ trigger can be pulled without rediscovery:
 
 - **Cross-broker logic dedup** — non-breaking cleanup, deferrable to a 0.1.x.
   Several backend internals are copied rather than shared: the dead-letter sweep
-  bound (`MAX_DEAD_LETTER_SWEEP = 128`, three copies), the `i64`/`Option<i64>` →
-  `JobState` classify mapping (four copies), the dead-letter prune/retention
-  computation (SQLite ↔ Postgres near-verbatim), and the `SCHEMA_VERSION = 1`
-  baseline-rejection policy (three copies). `worklane_core::spi::reject_chars`
+  bound (`MAX_DEAD_LETTER_SWEEP = 128`, **four** copies — the SQLite, Postgres,
+  and memory `const`s plus the Redis Lua literal `sweep_cap = 128` in
+  `crates/worklane-redis/src/scripts.rs`), the `i64`/`Option<i64>` → `JobState`
+  classify mapping (**three** integer-mapping copies — SQLite, Postgres, Redis;
+  the memory broker returns `JobState` directly and is structurally different),
+  the dead-letter prune/retention computation (SQLite ↔ Postgres near-verbatim),
+  and the `SCHEMA_VERSION = 1` baseline-rejection policy (three copies). `worklane_core::spi::reject_chars`
   and `redact_credentials` are the model: lift the shared *decision* into core
   and leave each backend only its dialect-specific statements.
+
+### Performance & hardening (perf/risk scan)
+
+Findings from the scan that motivated the **Redis hot-path script cache** (now
+shipped). Positioned here as separate future proposals — none is implemented by
+that change.
+
+- **P2 — Postgres `enqueue_batch` no-unique-key UNNEST fast path** — for batches
+  without unique keys, skip the per-row dedup machinery and use a single
+  multi-row `UNNEST` insert. Measured insert-shape ceiling ~15,450 jobs/s vs the
+  current ~5,500 (~2.8× headroom). Unique-key rows keep the existing per-row
+  claim path. Behavior-preserving; gated on a real batch-throughput consumer.
+- **P3 — quantified idle-poll tax** — 16 idle workers issue ~4,000 empty
+  `reserve` queries/s on Postgres (~87,000/s on Redis). Document in
+  `docs/known-limitations.md` as the cost of the poll-based design; explicitly
+  **do not** add LISTEN/NOTIFY — it reintroduces the commit serialization
+  worklane deliberately avoids. Mitigation is worker idle backoff.
+- **R1 — pull the parked "Adversarial / modular conformance" clock-skew +
+  fault-injection slices forward** — `ManualClock` has no `set`/rewind, and the
+  duplicate-window-widening on a forward clock step (documented in all three
+  durable brokers) is untested. A slice of the larger conformance-restructure
+  item, worth landing earlier as a focused correctness test.
+- **R2 — make SQLite `insert_job` dedup defensive** — use
+  `INSERT ... ON CONFLICT (unique_key) DO NOTHING` + re-read to match the
+  Postgres claim loop, rather than relying solely on the single-writer
+  invariant.
 
 ### Ecosystem & Orchestration (out of core scope)
 
