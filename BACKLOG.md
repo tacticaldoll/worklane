@@ -204,15 +204,34 @@ that change.
   `docs/known-limitations.md` as the cost of the poll-based design; explicitly
   **do not** add LISTEN/NOTIFY — it reintroduces the commit serialization
   worklane deliberately avoids. Mitigation is worker idle backoff.
-- **R1 — pull the parked "Adversarial / modular conformance" clock-skew +
-  fault-injection slices forward** — `ManualClock` has no `set`/rewind, and the
-  duplicate-window-widening on a forward clock step (documented in all three
-  durable brokers) is untested. A slice of the larger conformance-restructure
-  item, worth landing earlier as a focused correctness test.
-- **R2 — make SQLite `insert_job` dedup defensive** — use
-  `INSERT ... ON CONFLICT (unique_key) DO NOTHING` + re-read to match the
-  Postgres claim loop, rather than relying solely on the single-writer
-  invariant.
+- **R1 — clock-skew conformance (forward direction already covered)** — the
+  forward-step lease behavior (an in-flight lease expires → the job is
+  redelivered → the superseded receipt is rejected as `StaleReservation`) is
+  already verified cross-backend by the timed battery
+  (`superseded_receipt_rejected_current_resolves`,
+  `expired_receipt_rejected_without_mutation`): a `ManualClock.advance(lease)` is
+  indistinguishable from an NTP forward jump at the broker layer, which only
+  compares `now` against a stored absolute deadline. The backward-skew guarantee
+  is a `WallClock` property (the `floor_nanos` clamp), already unit-tested in
+  `worklane-core`; feeding a broker a non-monotonic clock would test the wrong
+  layer, so `ManualClock` `set`/rewind is intentionally not added. Residual: at
+  most a one-line module-doc note attributing the backward guarantee to
+  `WallClock` rather than the broker — not worth a dedicated change.
+- **R2 — SQLite `insert_job` dedup is already safe (not needed)** — the concern
+  was that the plain `INSERT INTO unique_keys` after a check-then-insert could
+  conflict and error under concurrent connections (the WAL pool, or a second
+  process). Audit shows it cannot: `init_connection` sets
+  `TransactionBehavior::Immediate`, so every broker write (`unchecked_transaction`)
+  takes the write lock at `BEGIN`, serializing all writers cross-connection and
+  cross-process via SQLite's file lock. A losing writer cannot run its dedup
+  `SELECT` until the winner commits, so it always sees the committed holder and
+  returns the existing id — the conflicting-`INSERT` path is unreachable. Verified
+  by the file-backed concurrent conformance test (`concurrent_unique_enqueue_dedups`,
+  30/30) and a `BEGIN IMMEDIATE` lock spike. The protection is write
+  serialization at `BEGIN`, not deployment discipline; Postgres needs its
+  `ON CONFLICT` claim loop only because READ COMMITTED lets its initial `SELECT`
+  race, which `BEGIN IMMEDIATE` forecloses here. Revisit only if the broker ever
+  moves off `BEGIN IMMEDIATE`.
 
 ### Ecosystem & Orchestration (out of core scope)
 
