@@ -34,4 +34,4 @@
 
 ## 5. Closeout
 
-- [ ] 5.1 Update BACKLOG.md with the ✓ shipped status after archiving.
+- [x] 5.1 Update BACKLOG.md with the ✓ shipped status after archiving.
