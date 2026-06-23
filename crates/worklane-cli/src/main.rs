@@ -8,6 +8,7 @@
 //! wl --broker postgres --url $DATABASE_URL dead-letters list critical --limit 20
 //! wl --broker redis --url $REDIS_URL dead-letters requeue <id>
 //! wl --broker sqlite --db ./jobs.db stats default
+//! wl --broker sqlite --db ./jobs.db classify <job-id>
 //! ```
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -16,6 +17,7 @@ mod broker;
 mod cmd;
 
 use clap::{Parser, Subcommand};
+use worklane_core::JobId;
 
 /// Worklane operator CLI.
 ///
@@ -61,6 +63,23 @@ enum Commands {
         /// The lane to inspect.
         lane: String,
     },
+    /// Classify a job's lifecycle state by id.
+    Classify {
+        /// The job ID to classify (UUID). Rejected before connecting if invalid.
+        #[arg(value_parser = parse_job_id)]
+        job_id: JobId,
+        /// Output format: text (default) or json.
+        #[arg(long, default_value = "text")]
+        format: String,
+    },
+}
+
+/// Parse a `<job-id>` argument into a [`JobId`] at the CLI layer, so an invalid
+/// id fails fast with a non-zero exit before any broker connection is opened.
+fn parse_job_id(s: &str) -> Result<JobId, String> {
+    // clap already prefixes the bad value ("invalid value '<s>' for <JOB_ID>"),
+    // and the inner error names the problem, so just surface that.
+    s.parse::<JobId>().map_err(|e| e.to_string())
 }
 
 /// Dead-letter maintenance commands.
@@ -122,6 +141,9 @@ async fn main() {
             action: DeadLetterAction::Purge { lane, yes },
         } => cmd::dead_letters::purge(broker.as_ref(), lane, *yes).await,
         Commands::Stats { lane } => cmd::stats::run(broker.as_ref(), lane).await,
+        Commands::Classify { job_id, format } => {
+            cmd::classify::run(broker.as_ref(), *job_id, format).await
+        }
     };
 
     if let Err(e) = result {
