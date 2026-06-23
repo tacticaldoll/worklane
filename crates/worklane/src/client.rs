@@ -281,12 +281,12 @@ impl Client {
         }
         builder.enqueue().await
     }
-    /// Spawn a chord: a collection of independent dependency jobs that run in
+    /// Spawn a fan-in: a collection of independent dependency jobs that run in
     /// parallel, followed by a callback that runs only after all dependencies
     /// have completed successfully — receiving their aggregated outputs. The
     /// entire topology is enqueued atomically.
     ///
-    /// The callback job `CB` is declared with `Payload = ChordResults<C>`: at fire
+    /// The callback job `CB` is declared with `Payload = FanInResults<C>`: at fire
     /// time it receives the caller `context` plus each dependency's opaque output
     /// bytes, in dependency order. The callback cannot be passed as a pre-built
     /// `JobBuilder` because its payload (the results) does not exist at submit
@@ -294,7 +294,7 @@ impl Client {
     /// lane/priority/max_attempts from the client's defaults.
     ///
     /// **The callback fires at-least-once, not exactly-once — it MUST be
-    /// idempotent.** Its `chord:{chord_id}:callback` key dedups only within the
+    /// idempotent.** Its `fanin:{fanin_id}:callback` key dedups only within the
     /// live window (like every `unique_key`): the key is released once the
     /// callback completes, so a watcher generation that is redelivered after the
     /// callback already ran (e.g. the watcher's own lease expired before it
@@ -302,37 +302,37 @@ impl Client {
     /// at-least-once delivery contract; design the callback to tolerate running
     /// more than once, exactly as for any handler.
     ///
-    /// This uses the default [`ChordPolicy`](crate::canvas::ChordPolicy) (poll
-    /// every 10s for up to ~24h). Use [`chord_with_policy`](Self::chord_with_policy)
+    /// This uses the default [`FanInPolicy`](crate::workflow::FanInPolicy) (poll
+    /// every 10s for up to ~24h). Use [`fan_in_with_policy`](Self::fan_in_with_policy)
     /// to tune the poll cadence or the pending-window bound.
-    pub async fn chord<CB, C>(
+    pub async fn fan_in<CB, C>(
         &self,
-        chord_id: String,
+        fanin_id: String,
         dependencies: impl IntoIterator<Item = JobBuilder<'_>>,
         context: C,
     ) -> Result<()>
     where
-        CB: Job<Payload = crate::canvas::ChordResults<C>>,
+        CB: Job<Payload = crate::workflow::FanInResults<C>>,
         C: serde::Serialize,
     {
-        self.chord_with_policy::<CB, C>(chord_id, dependencies, context, Default::default())
+        self.fan_in_with_policy::<CB, C>(fanin_id, dependencies, context, Default::default())
             .await
     }
 
-    /// [`chord`](Self::chord) with an explicit
-    /// [`ChordPolicy`](crate::canvas::ChordPolicy) controlling the watcher's poll
+    /// [`fan-in`](Self::fan_in) with an explicit
+    /// [`FanInPolicy`](crate::workflow::FanInPolicy) controlling the watcher's poll
     /// cadence (`poll_delay_secs`) and the maximum number of polls
-    /// (`max_generations`) before the chord fails. The worst-case wall-clock a
-    /// chord stays pending is `poll_delay_secs * max_generations`.
-    pub async fn chord_with_policy<CB, C>(
+    /// (`max_generations`) before the fan-in fails. The worst-case wall-clock a
+    /// fan-in stays pending is `poll_delay_secs * max_generations`.
+    pub async fn fan_in_with_policy<CB, C>(
         &self,
-        chord_id: String,
+        fanin_id: String,
         dependencies: impl IntoIterator<Item = JobBuilder<'_>>,
         context: C,
-        policy: crate::canvas::ChordPolicy,
+        policy: crate::workflow::FanInPolicy,
     ) -> Result<()>
     where
-        CB: Job<Payload = crate::canvas::ChordResults<C>>,
+        CB: Job<Payload = crate::workflow::FanInResults<C>>,
         C: serde::Serialize,
     {
         // Guard the public tuning surface: a zero poll delay would make the
@@ -340,7 +340,7 @@ impl Client {
         // (max_generations >= 1 is enforced by the watcher payload constructor.)
         if policy.poll_delay_secs == 0 {
             return Err(Error::Broker(
-                "ChordPolicy.poll_delay_secs must be >= 1; a zero delay would re-poll \
+                "FanInPolicy.poll_delay_secs must be >= 1; a zero delay would re-poll \
                  with no wait between generations"
                     .to_string(),
             ));
@@ -351,15 +351,15 @@ impl Client {
         let mut seen_dep_ids = HashSet::new();
         for dep in dependencies {
             let job = dep.into_inner();
-            // A chord dependency must not carry a unique_key: the atomic batch
+            // A fan-in dependency must not carry a unique_key: the atomic batch
             // enqueue below deduplicates unique_key collisions, which could drop
             // the member while its id still rides in the watcher payload — a
             // phantom id that later classifies as CompletedOrUnknown and falsely
-            // completes the chord. Reject before submitting anything so every
+            // completes the fan-in. Reject before submitting anything so every
             // recorded dependency id denotes a persisted job.
             if job.unique_key.is_some() {
                 return Err(Error::Broker(
-                    "a chord dependency must not set a unique_key: the atomic batch \
+                    "a fan-in dependency must not set a unique_key: the atomic batch \
                      enqueue could deduplicate the member away, leaving the watcher \
                      with a dependency id that was never persisted"
                         .to_string(),
@@ -367,7 +367,7 @@ impl Client {
             }
             if !seen_dep_ids.insert(job.id) {
                 return Err(Error::Broker(format!(
-                    "a chord dependency id appears more than once: {}",
+                    "a fan-in dependency id appears more than once: {}",
                     job.id
                 )));
             }
@@ -376,9 +376,9 @@ impl Client {
         }
 
         // The sealed constructor enforces the invariants (generation 1, empty
-        // capture set) and rejects a chord with no dependencies, submitting nothing.
-        let watcher_payload = crate::canvas::ChordWatcherPayload::new(
-            chord_id,
+        // capture set) and rejects a fan-in with no dependencies, submitting nothing.
+        let watcher_payload = crate::workflow::FanInWatcherPayload::new(
+            fanin_id,
             dep_ids,
             self.lane.to_string(),
             CB::KIND.to_string(),
@@ -390,7 +390,7 @@ impl Client {
         )?;
 
         let watcher_job = self
-            .build_job::<crate::canvas::ChordWatcherJob>(watcher_payload)?
+            .build_job::<crate::workflow::FanInWatcherJob>(watcher_payload)?
             .into_inner();
 
         let mut batch = deps;
@@ -404,7 +404,7 @@ impl Client {
 
         // Offload oversized payloads (Claim Check) before submitting — every
         // dependency payload and the watcher's (which carries the callback
-        // context) — so the chord uses the same offload path as a plain enqueue.
+        // context) — so the fan-in uses the same offload path as a plain enqueue.
         // Without this an oversized dependency or context would bloat the queue or
         // be rejected by the envelope cap mid-topology. The watcher's self-rescheduled
         // generations and the final callback are offloaded on their own enqueue
@@ -423,7 +423,7 @@ impl Client {
                 submitted
                     .iter()
                     .map(|(job_id, payload)| (*job_id, payload.as_slice())),
-                "chord batch enqueue failed",
+                "fan-in batch enqueue failed",
             )
             .await;
             return Err(err);
@@ -559,7 +559,7 @@ mod tests {
     #[async_trait]
     impl Job for CallbackJob {
         const KIND: &'static str = "callback";
-        type Payload = crate::canvas::ChordResults<()>;
+        type Payload = crate::workflow::FanInResults<()>;
         type Output = ();
 
         async fn run(
@@ -759,7 +759,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_chord_submission_cleans_up_dependency_and_watcher_offloads() {
+    async fn failed_fanin_submission_cleans_up_dependency_and_watcher_offloads() {
         let store = Arc::new(CountingPayloadStore::default());
         let client = Client::new(Arc::new(FailingBroker))
             .with_payload_store(store.clone())
@@ -771,7 +771,7 @@ mod tests {
             .unwrap();
 
         let err = client
-            .chord::<CallbackJob, _>("cleanup-chord".to_string(), vec![dependency], ())
+            .fan_in::<CallbackJob, _>("cleanup-fan-in".to_string(), vec![dependency], ())
             .await
             .unwrap_err();
 
@@ -782,7 +782,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_chord_callback_enqueue_cleans_up_offloaded_payload() {
+    async fn failed_fanin_callback_enqueue_cleans_up_offloaded_payload() {
         let payload_store = Arc::new(CountingPayloadStore::default());
         let result_store = Arc::new(TestResultStore::default());
         let client = Arc::new(
@@ -792,11 +792,11 @@ mod tests {
         );
         let dep_id = JobId::new();
         result_store.store(&dep_id, b"done").await.unwrap();
-        let watcher = crate::canvas::ChordWatcherJob {
+        let watcher = crate::workflow::FanInWatcherJob {
             client,
             result_store,
         };
-        let payload = crate::canvas::ChordWatcherPayload::new(
+        let payload = crate::workflow::FanInWatcherPayload::new(
             "callback-cleanup".to_string(),
             vec![dep_id],
             "default".to_string(),

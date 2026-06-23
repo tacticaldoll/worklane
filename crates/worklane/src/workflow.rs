@@ -2,11 +2,11 @@ use crate::Client;
 use async_trait::async_trait;
 use worklane_core::{Job, JobContext, JobId, Result};
 
-/// The Workflow Canvas extension trait.
-/// Provides building blocks for Celery-style topologies (Chains, Chords) built entirely
+/// The Workflow extension trait.
+/// Provides building blocks for fan-in/fan-out topologies (sequences and fan-ins) built entirely
 /// in user-space over the core primitives.
 #[async_trait]
-pub trait Canvas {
+pub trait Workflow {
     /// Create a `JobBuilder` for an idempotent sequential continuation.
     /// Allows mutating the continuation job (e.g., setting trace context) before enqueueing.
     fn build_continuation<'a, J: Job>(
@@ -25,13 +25,13 @@ pub trait Canvas {
 }
 
 #[async_trait]
-impl Canvas for Client {
+impl Workflow for Client {
     fn build_continuation<'a, J: Job>(
         &'a self,
         ctx: &JobContext,
         payload: J::Payload,
     ) -> Result<crate::client::JobBuilder<'a>> {
-        let key = format!("chain:{}:{}", ctx.id, J::KIND);
+        let key = format!("sequence:{}:{}", ctx.id, J::KIND);
         Ok(self
             .build_job::<J>(payload)?
             .with_lane(ctx.lane.clone())
@@ -52,24 +52,24 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use worklane_core::NewJob;
 
-/// The payload delivered to a chord callback: the caller's `context` plus each
+/// The payload delivered to a fan-in callback: the caller's `context` plus each
 /// dependency's opaque output bytes, in dependency order.
 ///
-/// A chord is fan-out-then-aggregate — the callback runs *over the dependency
+/// A fan-in is fan-out-then-aggregate — the callback runs *over the dependency
 /// results*, not merely after they complete. Each entry of `results` is one
 /// dependency's raw `Job::Output` bytes (as stored in the `ResultStore`); the
 /// callback deserializes each itself (e.g. via `from_payload`). The callback job
-/// is declared as `Job<Payload = ChordResults<C>>` and submitted with
-/// [`Client::chord`].
+/// is declared as `Job<Payload = FanInResults<C>>` and submitted with
+/// [`Client::fan_in`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChordResults<C> {
-    /// The caller-supplied context passed to [`Client::chord`].
+pub struct FanInResults<C> {
+    /// The caller-supplied context passed to [`Client::fan_in`].
     pub context: C,
     /// Each dependency's opaque output bytes, in dependency order.
     pub results: Vec<Vec<u8>>,
 }
 
-fn chord_results_payload(
+fn fan_in_results_payload(
     callback_payload: &[u8],
     results: Vec<Vec<u8>>,
 ) -> worklane_core::Result<Vec<u8>> {
@@ -79,23 +79,23 @@ fn chord_results_payload(
         .map_err(|e| worklane_core::Error::Serialization(e.to_string()))
 }
 
-/// Tuning for a chord watcher's poll loop, passed to
-/// [`Client::chord_with_policy`](crate::Client::chord_with_policy).
+/// Tuning for a fan-in watcher's poll loop, passed to
+/// [`Client::fan_in_with_policy`](crate::Client::fan_in_with_policy).
 ///
 /// The watcher re-checks its dependencies every `poll_delay_secs` and gives up
-/// after `max_generations` polls, so the worst-case wall-clock a chord stays
+/// after `max_generations` polls, so the worst-case wall-clock a fan-in stays
 /// pending before failing is `poll_delay_secs * max_generations`. The delay is in
 /// whole seconds (matching the watcher's self-reschedule granularity); both
 /// fields must be `>= 1`. [`Default`] polls every 10s for up to ~24h.
 #[derive(Debug, Clone, Copy)]
-pub struct ChordPolicy {
+pub struct FanInPolicy {
     /// Seconds between two consecutive dependency polls. Must be `>= 1`.
     pub poll_delay_secs: u64,
-    /// Maximum number of polls before the chord fails. Must be `>= 1`.
+    /// Maximum number of polls before the fan-in fails. Must be `>= 1`.
     pub max_generations: u32,
 }
 
-impl Default for ChordPolicy {
+impl Default for FanInPolicy {
     fn default() -> Self {
         Self {
             poll_delay_secs: 10,
@@ -104,25 +104,25 @@ impl Default for ChordPolicy {
     }
 }
 
-/// Payload for the internal `ChordWatcherJob`.
+/// Payload for the internal `FanInWatcherJob`.
 ///
-/// The fields are crate-private and [`ChordWatcherPayload::new`] is the only
+/// The fields are crate-private and [`FanInWatcherPayload::new`] is the only
 /// supported constructor for normal callers, but this is still a serialized job
 /// payload at the broker boundary. A caller with direct broker access can submit
 /// malformed bytes, so the watcher validates its invariants again when it runs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChordWatcherPayload {
-    /// The stable ID of the chord, used for the callback's idempotency key
-    pub(crate) chord_id: String,
-    /// The full list of chord dependencies, retained across generations (it is
+pub struct FanInWatcherPayload {
+    /// The stable ID of the fan-in, used for the callback's idempotency key
+    pub(crate) fanin_id: String,
+    /// The full list of fan-in dependencies, retained across generations (it is
     /// not shrunk; `collected` records which have been captured). Capture is
     /// monotonic: each generation captures any newly-available dependency output
     /// into `collected`, so a later eviction (e.g. a result TTL) of an
-    /// already-captured dependency cannot regress the chord. A dependency that
+    /// already-captured dependency cannot regress the fan-in. A dependency that
     /// completed but whose result was evicted *before* it was ever captured fails
-    /// the chord, because aggregation requires the value.
+    /// the fan-in, because aggregation requires the value.
     ///
-    /// Invariant: every id here MUST originate from [`Client::chord`], which
+    /// Invariant: every id here MUST originate from [`Client::fan_in`], which
     /// rejects a dependency carrying a `unique_key` and submits the dependencies
     /// in the same atomic batch — so each id denotes a job that was actually
     /// persisted, and `classify` returning `CompletedOrUnknown` for it can only
@@ -145,27 +145,27 @@ pub struct ChordWatcherPayload {
     pub(crate) callback_lane: String,
     pub(crate) callback_kind: String,
     /// The serialized caller context (`C`); the watcher wraps it together with
-    /// the captured results into a `ChordResults<C>` payload at fire time.
+    /// the captured results into a `FanInResults<C>` payload at fire time.
     pub(crate) callback_payload: Vec<u8>,
     pub(crate) callback_max_attempts: u32,
     pub(crate) callback_priority: u8,
 }
 
-impl ChordWatcherPayload {
-    /// Build the initial watcher payload for a chord: generation 1, nothing
+impl FanInWatcherPayload {
+    /// Build the initial watcher payload for a fan-in: generation 1, nothing
     /// captured yet. The only supported constructor — it enforces the invariants
     /// the watcher relies on (start at generation 1 with an empty capture set) and
     /// rejects degenerate inputs (no dependencies, or a zero generation bound) up
     /// front rather than letting them surface as a confusing mid-flight failure.
     ///
     /// The watcher captures each dependency's output for aggregation: a
-    /// still-running dependency stays live and keeps the chord pending; a
-    /// dead-lettered one fails the chord fast; a dependency whose result is
-    /// evicted before capture fails the chord (the result TTL must outlive the
-    /// chord until capture).
+    /// still-running dependency stays live and keeps the fan-in pending; a
+    /// dead-lettered one fails the fan-in fast; a dependency whose result is
+    /// evicted before capture fails the fan-in (the result TTL must outlive the
+    /// fan-in until capture).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        chord_id: String,
+        fanin_id: String,
         dependencies: Vec<JobId>,
         callback_lane: String,
         callback_kind: String,
@@ -177,16 +177,16 @@ impl ChordWatcherPayload {
     ) -> worklane_core::Result<Self> {
         if dependencies.is_empty() {
             return Err(worklane_core::Error::Broker(
-                "a chord must have at least one dependency".to_string(),
+                "a fan-in must have at least one dependency".to_string(),
             ));
         }
         if max_generations == 0 {
             return Err(worklane_core::Error::Broker(
-                "a chord watcher needs at least one generation (max_generations >= 1)".to_string(),
+                "a fan-in watcher needs at least one generation (max_generations >= 1)".to_string(),
             ));
         }
         Ok(Self {
-            chord_id,
+            fanin_id,
             dependencies,
             collected: Vec::new(),
             generation: 1,
@@ -200,7 +200,7 @@ impl ChordWatcherPayload {
         })
     }
 
-    /// The chord's dependency ids, in aggregation order (read-only).
+    /// The fan-in's dependency ids, in aggregation order (read-only).
     pub fn dependencies(&self) -> &[JobId] {
         &self.dependencies
     }
@@ -211,39 +211,39 @@ impl ChordWatcherPayload {
     }
 
     fn validate(&self) -> std::result::Result<(), String> {
-        if self.chord_id.is_empty() {
-            return Err("chord watcher payload is malformed: chord_id is empty".to_string());
+        if self.fanin_id.is_empty() {
+            return Err("fan-in watcher payload is malformed: fanin_id is empty".to_string());
         }
         if self.dependencies.is_empty() {
             return Err(format!(
-                "chord watcher payload for {} is malformed: no dependencies",
-                self.chord_id
+                "fan-in watcher payload for {} is malformed: no dependencies",
+                self.fanin_id
             ));
         }
         if self.generation == 0 {
             return Err(format!(
-                "chord watcher payload for {} is malformed: generation must be positive",
-                self.chord_id
+                "fan-in watcher payload for {} is malformed: generation must be positive",
+                self.fanin_id
             ));
         }
         if self.max_generations == 0 || self.generation > self.max_generations {
             return Err(format!(
-                "chord watcher payload for {} is malformed: generation {} exceeds max {}",
-                self.chord_id, self.generation, self.max_generations
+                "fan-in watcher payload for {} is malformed: generation {} exceeds max {}",
+                self.fanin_id, self.generation, self.max_generations
             ));
         }
         if self.callback_kind.is_empty() {
             return Err(format!(
-                "chord watcher payload for {} is malformed: callback kind is empty",
-                self.chord_id
+                "fan-in watcher payload for {} is malformed: callback kind is empty",
+                self.fanin_id
             ));
         }
         self.callback_lane
             .parse::<worklane_core::Lane>()
             .map_err(|err| {
                 format!(
-                    "chord watcher payload for {} is malformed: invalid callback lane: {err}",
-                    self.chord_id
+                    "fan-in watcher payload for {} is malformed: invalid callback lane: {err}",
+                    self.fanin_id
                 )
             })?;
 
@@ -251,8 +251,8 @@ impl ChordWatcherPayload {
         for dep_id in &self.dependencies {
             if !dependencies.insert(*dep_id) {
                 return Err(format!(
-                    "chord watcher payload for {} is malformed: duplicate dependency {}",
-                    self.chord_id, dep_id
+                    "fan-in watcher payload for {} is malformed: duplicate dependency {}",
+                    self.fanin_id, dep_id
                 ));
             }
         }
@@ -261,14 +261,14 @@ impl ChordWatcherPayload {
         for (dep_id, _) in &self.collected {
             if !dependencies.contains(dep_id) {
                 return Err(format!(
-                    "chord watcher payload for {} is malformed: captured unknown dependency {}",
-                    self.chord_id, dep_id
+                    "fan-in watcher payload for {} is malformed: captured unknown dependency {}",
+                    self.fanin_id, dep_id
                 ));
             }
             if !captured.insert(*dep_id) {
                 return Err(format!(
-                    "chord watcher payload for {} is malformed: duplicate captured dependency {}",
-                    self.chord_id, dep_id
+                    "fan-in watcher payload for {} is malformed: duplicate captured dependency {}",
+                    self.fanin_id, dep_id
                 ));
             }
         }
@@ -276,9 +276,9 @@ impl ChordWatcherPayload {
     }
 }
 
-/// A self-rescheduling watcher job that polls the `ResultStore` for a chord's dependencies.
+/// A self-rescheduling watcher job that polls the `ResultStore` for a fan-in's dependencies.
 /// Once all dependencies are complete, it dispatches the callback job.
-pub struct ChordWatcherJob {
+pub struct FanInWatcherJob {
     /// Client used to enqueue the callback or reschedule the watcher.
     pub client: Arc<Client>,
     /// Result store used to inspect dependency completion and payload bytes.
@@ -286,10 +286,10 @@ pub struct ChordWatcherJob {
 }
 
 #[async_trait]
-impl Job for ChordWatcherJob {
-    type Payload = ChordWatcherPayload;
+impl Job for FanInWatcherJob {
+    type Payload = FanInWatcherPayload;
     type Output = ();
-    const KIND: &'static str = "worklane:chord_watcher";
+    const KIND: &'static str = "worklane:fan_in_watcher";
 
     async fn run(
         &self,
@@ -302,7 +302,7 @@ impl Job for ChordWatcherJob {
         // Capture each dependency's output value (not just its presence). Capture
         // is monotonic: a value captured in an earlier generation is carried
         // forward in `collected`, so a later eviction of that result cannot
-        // regress the chord. Only deps whose value has never been captured are
+        // regress the fan-in. Only deps whose value has never been captured are
         // polled.
         let mut collected = payload.collected.clone();
         let mut captured: HashMap<JobId, usize> = collected
@@ -321,8 +321,8 @@ impl Job for ChordWatcherJob {
             match self.client.broker.classify(*dep_id).await? {
                 worklane_core::JobState::DeadLettered => {
                     return Err(format!(
-                        "Chord {} cannot complete: dependency {} was dead-lettered",
-                        payload.chord_id, dep_id
+                        "Fan-in {} cannot complete: dependency {} was dead-lettered",
+                        payload.fanin_id, dep_id
                     )
                     .into());
                 }
@@ -336,9 +336,9 @@ impl Job for ChordWatcherJob {
                         captured.insert(*dep_id, index);
                     } else {
                         return Err(format!(
-                            "Chord {} cannot aggregate: dependency {} completed but its \
+                            "Fan-in {} cannot aggregate: dependency {} completed but its \
                              result was evicted before capture (increase the result TTL)",
-                            payload.chord_id, dep_id
+                            payload.fanin_id, dep_id
                         )
                         .into());
                     }
@@ -350,8 +350,8 @@ impl Job for ChordWatcherJob {
             // Some dependency has never been observed complete. Check the bound.
             if payload.generation >= payload.max_generations {
                 return Err(format!(
-                    "Chord {} exceeded max generations ({})",
-                    payload.chord_id, payload.max_generations
+                    "Fan-in {} exceeded max generations ({})",
+                    payload.fanin_id, payload.max_generations
                 )
                 .into());
             }
@@ -361,17 +361,17 @@ impl Job for ChordWatcherJob {
             // dependency list stays intact; `collected` records which are done).
             let mut next_payload = payload.clone();
             // `saturating_add` so a corrupt/extreme generation value can never panic
-            // on overflow; the `max_generations` bound terminates the chord long
+            // on overflow; the `max_generations` bound terminates the fan-in long
             // before this saturates in any real configuration.
             next_payload.generation = payload.generation.saturating_add(1);
             next_payload.collected = collected;
             let next_gen = next_payload.generation;
 
             // Use a generation-keyed unique key to dedup identical retries of the same generation
-            let key = format!("cw:{}:{}", payload.chord_id, next_gen);
+            let key = format!("fiw:{}:{}", payload.fanin_id, next_gen);
 
             self.client
-                .enqueue_inner::<ChordWatcherJob>(
+                .enqueue_inner::<FanInWatcherJob>(
                     ctx.lane.clone(),
                     std::time::Duration::from_secs(payload.poll_delay_secs),
                     Some(key),
@@ -384,7 +384,7 @@ impl Job for ChordWatcherJob {
         }
 
         // Every dependency's value is captured. Aggregate the outputs in
-        // dependency order and deliver them to the callback as ChordResults<C>.
+        // dependency order and deliver them to the callback as FanInResults<C>.
         let results: Vec<Vec<u8>> = payload
             .dependencies
             .iter()
@@ -392,7 +392,7 @@ impl Job for ChordWatcherJob {
                 // With no pending dependency every id is captured, so this is
                 // normally infallible — but return an error instead of panicking if
                 // an inconsistent (e.g. hand-forged or duplicated-id) payload ever
-                // reaches here, so the chord fails cleanly rather than crashing the
+                // reaches here, so the fan-in fails cleanly rather than crashing the
                 // worker task.
                 captured
                     .get(id)
@@ -400,8 +400,8 @@ impl Job for ChordWatcherJob {
                     .map(|(_, bytes)| bytes.clone())
                     .ok_or_else(|| -> worklane_core::HandlerError {
                         format!(
-                            "chord {} internal inconsistency: dependency {} was not captured",
-                            payload.chord_id, id
+                            "fan-in {} internal inconsistency: dependency {} was not captured",
+                            payload.fanin_id, id
                         )
                         .into()
                     })
@@ -409,10 +409,10 @@ impl Job for ChordWatcherJob {
             .collect::<std::result::Result<_, _>>()?;
 
         // Splice the caller context (opaque bytes) and the captured result bytes
-        // into the ChordResults<C> wire form. The watcher does not know C, so the
+        // into the FanInResults<C> wire form. The watcher does not know C, so the
         // helper builds the JSON object via serde_json::Value and its unit test
-        // proves `serde_json::from_slice::<ChordResults<C>>` reads it back.
-        let callback_payload = chord_results_payload(&payload.callback_payload, results)?;
+        // proves `serde_json::from_slice::<FanInResults<C>>` reads it back.
+        let callback_payload = fan_in_results_payload(&payload.callback_payload, results)?;
 
         // Enqueue the callback exactly once. Validate the callback lane against the
         // client's registry before enqueue, like every other enqueue path,
@@ -422,10 +422,10 @@ impl Job for ChordWatcherJob {
         self.client.check_lane(&callback_lane)?;
         // Offload the aggregated callback payload (Claim Check) before enqueue. This
         // is the payload most likely to be large — it splices together every
-        // dependency's output — so without offload a wide or heavy chord would be
+        // dependency's output — so without offload a wide or heavy fan-in would be
         // rejected by the envelope cap right at the finish line. No-op unless a
         // payload store is configured. (The dependency payloads and the watcher were
-        // offloaded when the chord was submitted.)
+        // offloaded when the fan-in was submitted.)
         let callback_payload = self.client.maybe_offload(callback_payload).await?;
         let callback_job = NewJob::new(
             callback_lane,
@@ -433,7 +433,7 @@ impl Job for ChordWatcherJob {
             callback_payload,
             payload.callback_max_attempts,
         )
-        .with_unique_key(format!("chord:{}:callback", payload.chord_id))
+        .with_unique_key(format!("fanin:{}:callback", payload.fanin_id))
         .with_priority(payload.callback_priority);
         let callback_id = callback_job.id;
         let callback_payload = callback_job.payload.clone();
@@ -443,7 +443,7 @@ impl Job for ChordWatcherJob {
                 .cleanup_offload(
                     callback_id,
                     &callback_payload,
-                    "chord callback enqueue failed",
+                    "fan-in callback enqueue failed",
                 )
                 .await;
             return Err(err.into());
@@ -465,15 +465,15 @@ mod tests {
     }
 
     #[test]
-    fn chord_results_payload_round_trips_wire_shape() {
+    fn fan_in_results_payload_round_trips_wire_shape() {
         let context = CallbackContext {
             label: "done".to_string(),
             generation: 3,
         };
         let context_payload = worklane_core::to_payload(&context).unwrap();
         let payload =
-            chord_results_payload(&context_payload, vec![vec![1, 2], vec![3, 4]]).unwrap();
-        let decoded: ChordResults<CallbackContext> = worklane_core::from_payload(&payload).unwrap();
+            fan_in_results_payload(&context_payload, vec![vec![1, 2], vec![3, 4]]).unwrap();
+        let decoded: FanInResults<CallbackContext> = worklane_core::from_payload(&payload).unwrap();
 
         assert_eq!(decoded.context, context);
         assert_eq!(decoded.results, vec![vec![1, 2], vec![3, 4]]);

@@ -17,16 +17,15 @@ pluggable brokers.
 
 ## What makes it different
 
-Plenty of frameworks are "broker-agnostic." Celery, via Kombu, abstracts at the
-**transport** layer — it unifies the *messaging API* across RabbitMQ / Redis /
-SQS (emulating AMQP semantics on the non-AMQP ones). But job *behavior* — acks,
-visibility timeouts, retries, dead-lettering — is built on top and **varies by
-broker**, which is why Celery carries a long tail of per-broker caveats.
+Most "broker-agnostic" runners abstract at the **transport** layer: they unify
+the *messaging* API across backends, but job *behavior* — acks, visibility
+timeouts, retries, dead-lettering — is built on top and **varies by broker**,
+which is why such tools accumulate a long tail of per-broker caveats.
 
 `worklane` abstracts one layer up, at the **job lifecycle**. Every backend
 implements the same minimal `Broker` contract and must pass **one shared
 conformance suite** (`worklane-test`) — so behavior is *identical* across
-backends, verified rather than hoped. The contract is deliberately small enough
+backends, checked rather than assumed. The contract is deliberately small enough
 that this uniformity is actually achievable.
 
 ```text
@@ -48,9 +47,9 @@ that this uniformity is actually achievable.
 
 So you pick the backend you already run (your SQL database, your Redis), switch
 between them without behavior surprises, and — once the broker SPI is opened —
-third parties can add a backend that *provably* behaves the same. It is **not** a
-Celery clone: it intentionally does less (no exchange/routing model, no broad
-transport list) so that what it does is small, typed, and conformance-checked.
+third parties can add a backend that *provably* behaves the same. It
+intentionally does less (no exchange/routing model, no broad transport list) so
+that what it does is small, typed, and conformance-checked.
 
 ## Core loop
 

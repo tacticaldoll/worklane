@@ -3,8 +3,8 @@
 ## Purpose
 
 Defines the pluggable result storage system for capturing outputs from completed
-jobs. This enables higher-level orchestration patterns like Workflow Canvas
-(Chords/Chains) and provides a type-safe way for clients to retrieve job
+jobs. This enables higher-level orchestration patterns like workflow fan-in
+and sequences, and provides a type-safe way for clients to retrieve job
 results, while keeping the core `Broker` trait isolated from KV-store duties.
 
 ## Requirements
