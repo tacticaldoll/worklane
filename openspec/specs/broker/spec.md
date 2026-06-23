@@ -949,24 +949,19 @@ by the core contract.
 - **WHEN** a backend implements only the job-lifecycle operations and no optional
   capability
 - **THEN** it SHALL satisfy the `Broker` contract
+- **AND** a client SHALL be able to enqueue a job, and a worker SHALL be able to
+  reserve, run, ack, retry, defer, extend, or fail it according to the lifecycle
+  semantics in this specification
 - **AND** the worker core loop (reserve, dispatch, ack/retry/fail/dead-letter)
   SHALL operate against it unchanged
+- **AND** the broker SHALL be eligible to run the mandatory lifecycle
+  conformance suite
 
 #### Scenario: Classification stays in the core contract
 
 - **WHEN** a caller holds any `Broker`
 - **THEN** job-state classification SHALL be available directly on the broker
   without negotiating a capability
-
-#### Scenario: Core lifecycle implementation is sufficient
-
-- **WHEN** a broker implements the core lifecycle contract and no optional
-  capability traits
-- **THEN** a client SHALL be able to enqueue a job
-- **AND** a worker SHALL be able to reserve, run, ack, retry, defer, extend, or
-  fail that job according to the lifecycle semantics in this specification
-- **AND** the broker SHALL be eligible to run the mandatory lifecycle
-  conformance suite
 
 #### Scenario: Optional inspection is absent
 
