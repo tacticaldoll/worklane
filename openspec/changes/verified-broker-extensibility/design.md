@@ -230,15 +230,24 @@ Rollback is source-level: revert the split before publishing 0.2.0. After
 publication, restore compatibility only through additive adapters or a documented
 follow-up breaking release.
 
-## Open Questions
+## Resolved Questions
 
-- Exact trait names are implementation-level and may be finalized during apply,
-  but the capability boundaries are fixed by the delta specs before apply.
-- **Result storage access (resolution path).** Result storage stays a
-  per-broker concern *outside* the `Broker` trait for now (it is never reached
-  through `Arc<dyn Broker>` today, so promoting it to an accessor has no
-  consumer — *least commitment*). The conformance matrix presents it as a
-  storage-adjacent capability rather than a core broker capability. Revisit
-  only if the modular conformance work in §3 needs result storage reached
-  uniformly through the trait to slot it into a capability battery; that
-  decision MUST be resolved before sync.
+- Exact trait names are implementation-level and were finalized during apply
+  (`BatchEnqueue`); the capability boundaries were fixed by the delta specs
+  before apply.
+- **Result storage access (resolution path). RESOLVED — kept storage-adjacent,
+  not promoted to a `Broker` accessor.** The §3 modular conformance work did not
+  need result storage reached through the trait: result storage is its own
+  `worklane_core::ResultStore` trait, implemented by distinct types
+  (`SqliteResultStore`, `RedisResultStore`, `PostgresResultStore` — not the
+  broker types) and injected directly into `Client`/`Worker` as their own
+  `Arc<dyn ResultStore>` field, never reached through `Arc<dyn Broker>`. Its
+  conformance already runs as an independent battery through
+  `ResultStoreContractHarness` (which takes a `ResultStore`, not a `Broker`), so
+  there was nothing to slot into a broker capability battery. Adding a
+  `result_store()` accessor would put a consumer-less method on the load-bearing
+  `Broker` trait, violating *least commitment* and the Broker design gate.
+  Result storage therefore stays in the backend crates and appears in the
+  conformance matrix as a storage-adjacent capability rather than a core broker
+  capability. Revisit only if a future consumer must discover result storage
+  generically through `Arc<dyn Broker>`.
