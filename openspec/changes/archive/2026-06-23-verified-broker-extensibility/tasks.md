@@ -59,4 +59,4 @@
 - [x] 5.4 Run `cargo clippy --all-targets -- -D warnings`.
 - [x] 5.5 Verify the lifecycle guide, conformance guide, and conformance matrix
   match the delta specs.
-- [ ] 5.6 Update BACKLOG.md with the ✓ shipped status after archiving.
+- [x] 5.6 Update BACKLOG.md with the ✓ shipped status after archiving.
