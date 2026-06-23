@@ -41,7 +41,7 @@ is solid across the in-memory, SQLite, Postgres, and Redis brokers.
 
 ## Deferred
 
-To support `worklane` acting as a Celery-like orchestration engine and an
+To support `worklane` acting as an orchestration engine and an
 **Event-Driven Upstream**, we strictly enforce the *Minimal contracts*
 principle: the core knows nothing about events, topics, webhooks, or DAGs. These
 patterns are built *on top* of core primitives.
@@ -128,8 +128,8 @@ High-level patterns built at the client/application layer on the opaque
 - **Outbox Pattern / Transactional Enqueue** — achieved by using
   `worklane-postgres` or `worklane-sqlite` within the application's native SQL
   transaction. No core change needed.
-- **Exactly-once chord callback** — the chord callback is at-least-once today
-  (its `chord:{id}:callback` key releases when the callback completes, so a
+- **Exactly-once fan-in callback** — the fan-in callback is at-least-once today
+  (its `fanin:{id}:callback` key releases when the callback completes, so a
   redelivered watcher generation can re-fire it; handlers must be idempotent).
   True exactly-once would need a new persistent, lifecycle-independent tombstone
   primitive (the `ResultStore` is TTL-bounded; `unique_key` is lifecycle-bound)
@@ -189,7 +189,7 @@ High-level patterns built at the client/application layer on the opaque
   suite suffices; revisit only if observable states (Paused/Deferred) ever grow.
 - **Saga helpers** — a *scope-boundary* decision, not a timing one: compensating
   jobs for failed workflows belong above the core broker loop, built on
-  chord/canvas primitives in user space. Putting them in core would expand the
+  fan-in/fan-out primitives in user space. Putting them in core would expand the
   contract surface and violate *Minimal contracts*, regardless of demand.
 
 ## Guiding principle
