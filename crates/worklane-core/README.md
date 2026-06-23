@@ -8,9 +8,9 @@ Zero internal dependencies — everything else in the workspace depends on this.
 
 `worklane-core` defines the *interface* between three groups, and nothing else:
 
-- **Broker authors** — implement `Broker` (and optionally `ScheduledStore`,
-  `PayloadStore`, `ResultStore`) for a new backend (Postgres, Redis, …). The
-  `spi` module hands you the shared wire-format plumbing so backends can't drift.
+- **Broker authors** — implement `Broker` and optional capability traits for a
+  new backend (Postgres, Redis, ...). The `spi` module hands you the shared
+  wire-format plumbing so backends cannot drift.
 - **Integrators** — write metrics/tracing/middleware crates against the model
   (e.g. implement the `JobObserver` SPI) without pulling in the whole facade.
 - **The `worklane` facade** — re-exports this crate and adds the worker, client,
@@ -24,9 +24,10 @@ Depend on `worklane-core` directly only when you are extending the system.
 - Job model: `JobId`, `Lane` / `LaneRegistry`, `NewJob`, `JobEnvelope`,
   `Reservation` / `ReservationReceipt`, `DeadLetter`, `Job` / `JobContext`.
 - Contracts: `Broker` (the core store/lifecycle trait) plus its optional
-  capability traits `DeadLetterStore`, `QueueStats`, and `ScheduledStore`,
-  discovered through `Broker::dead_letter_store` / `queue_stats` /
-  `scheduled_store` accessors; `PayloadStore` (Claim Check); `ResultStore`.
+  capability traits `BatchEnqueue`, `DeadLetterStore`, `QueueStats`, and
+  `ScheduledStore`, discovered through `Broker::batch_enqueue` /
+  `dead_letter_store` / `queue_stats` / `scheduled_store` accessors;
+  `PayloadStore` (Claim Check); `ResultStore`.
 - Telemetry SPI: `JobObserver`, `JobEvent`, `JobAttemptEvent`, `JobOutcome`.
 - Policy & time: `RetryPolicy` (capped exponential backoff + deterministic
   jitter), `RetentionPolicy`, `Clock` / `SystemClock` / `WallClock`.
@@ -50,6 +51,11 @@ impl Broker for MyBroker {
     // ... the remaining lifecycle methods
 }
 ```
+
+Broker authors should use `spi::*` for shared backend decisions such as envelope
+encoding, receipt keys, duration conversion, stale-reservation errors, redaction,
+and validation helpers. See `docs/custom-brokers.md` in the workspace for the
+conformance wiring and migration notes.
 
 ## Layering
 

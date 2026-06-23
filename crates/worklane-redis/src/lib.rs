@@ -75,7 +75,7 @@ use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
 use worklane_core::{
-    Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
+    BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
     ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
 };
 
@@ -296,6 +296,46 @@ impl RedisBroker {
 }
 
 #[async_trait]
+impl BatchEnqueue for RedisBroker {
+    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
+        if jobs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut invoker = self.scripts.enqueue_batch.arg(&self.namespace);
+
+        for job in jobs {
+            lane_key_segment(&job.lane)?;
+            let available_at = nanos(self.clock.now().saturating_add(job.delay));
+            let unique_key = job.unique_key.clone().unwrap_or_default();
+            // Opaque, exact-match-only key segment — no key-safety check needed
+            // (see `enqueue`).
+            let id = job.id;
+            let envelope = job.into_envelope();
+            let blob = encode_envelope(&envelope)?;
+
+            invoker.arg(id.to_string());
+            invoker.arg(envelope.lane.as_str());
+            invoker.arg(available_at);
+            invoker.arg(blob);
+            invoker.arg(unique_key);
+            invoker.arg(envelope.priority);
+        }
+
+        let mut conn = self.conn.clone();
+        let stored_blobs: Vec<Vec<u8>> =
+            invoker.invoke_async(&mut conn).await.map_err(redis_err)?;
+
+        let mut final_ids = Vec::with_capacity(stored_blobs.len());
+        for blob in stored_blobs {
+            final_ids.push(decode_envelope(&blob)?.id);
+        }
+
+        Ok(final_ids)
+    }
+}
+
+#[async_trait]
 impl Broker for RedisBroker {
     async fn enqueue(&self, job: NewJob) -> Result<JobId> {
         // Reject a lane that cannot be safely embedded in a redis key before
@@ -332,41 +372,8 @@ impl Broker for RedisBroker {
         Ok(decode_envelope(&stored)?.id)
     }
 
-    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
-        if jobs.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut invoker = self.scripts.enqueue_batch.arg(&self.namespace);
-
-        for job in jobs {
-            lane_key_segment(&job.lane)?;
-            let available_at = nanos(self.clock.now().saturating_add(job.delay));
-            let unique_key = job.unique_key.clone().unwrap_or_default();
-            // Opaque, exact-match-only key segment — no key-safety check needed
-            // (see `enqueue`).
-            let id = job.id;
-            let envelope = job.into_envelope();
-            let blob = encode_envelope(&envelope)?;
-
-            invoker.arg(id.to_string());
-            invoker.arg(envelope.lane.as_str());
-            invoker.arg(available_at);
-            invoker.arg(blob);
-            invoker.arg(unique_key);
-            invoker.arg(envelope.priority);
-        }
-
-        let mut conn = self.conn.clone();
-        let stored_blobs: Vec<Vec<u8>> =
-            invoker.invoke_async(&mut conn).await.map_err(redis_err)?;
-
-        let mut final_ids = Vec::with_capacity(stored_blobs.len());
-        for blob in stored_blobs {
-            final_ids.push(decode_envelope(&blob)?.id);
-        }
-
-        Ok(final_ids)
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        Some(self)
     }
 
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {

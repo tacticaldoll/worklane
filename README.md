@@ -33,7 +33,7 @@ that this uniformity is actually achievable.
              the core Broker contract (job lifecycle)
       enqueue · reserve · ack · retry · fail · lease · classify
    + optional capabilities via accessors: dead-letter inspect/requeue
-                          · queue stats · scheduling
+                          · batch · queue stats · scheduling
                                │ implemented by
       ┌──────────┬─────────────┼─────────────┬────────────────────┐
    in-memory   SQLite     PostgreSQL        Redis        (your own broker)
@@ -51,6 +51,12 @@ between them without behavior surprises, and — once the broker SPI is opened �
 third parties can add a backend that *provably* behaves the same. It
 intentionally does less (no exchange/routing model, no broad transport list) so
 that what it does is small, typed, and conformance-checked.
+
+Broker authors should start with the custom broker guide in
+[`docs/custom-brokers.md`](docs/custom-brokers.md). The verified lifecycle is
+summarized in [`docs/lifecycle-semantics.md`](docs/lifecycle-semantics.md), and
+first-party capability coverage is tracked in
+[`docs/broker-conformance-matrix.md`](docs/broker-conformance-matrix.md).
 
 ## When not to use worklane
 
@@ -271,6 +277,11 @@ for the workflow, `openspec/specs/` for the authoritative job-lifecycle
 semantics, [`docs/development-flow.md`](docs/development-flow.md) for the
 change/commit checklist, [`docs/release-checklist.md`](docs/release-checklist.md)
 for crates.io release steps,
+[`docs/lifecycle-semantics.md`](docs/lifecycle-semantics.md) for a readable
+runtime semantics guide, [`docs/custom-brokers.md`](docs/custom-brokers.md) for
+broker-author SPI and conformance wiring,
+[`docs/broker-conformance-matrix.md`](docs/broker-conformance-matrix.md) for
+first-party suite coverage,
 [`docs/known-limitations.md`](docs/known-limitations.md) for support boundaries,
 and [`BACKLOG.md`](BACKLOG.md) for deferred ideas.
 

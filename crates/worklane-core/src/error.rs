@@ -62,6 +62,12 @@ pub enum Error {
     /// A result store operation failed, or no store is configured.
     #[error("result store error: {0}")]
     ResultStore(String),
+
+    /// An optional broker capability was requested from a broker that does not
+    /// implement it (its capability accessor returned `None`). The operation was
+    /// not performed. The string names the missing capability.
+    #[error("unsupported broker capability: {0}")]
+    UnsupportedCapability(String),
 }
 
 /// A `Result` specialized to the worklane [`enum@Error`] type.
