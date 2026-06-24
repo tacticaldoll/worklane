@@ -70,11 +70,11 @@
 
 ## 5. Docs and backlog
 
-- [ ] 5.1 Move the **P2** entry in `BACKLOG.md` from positioned-future to a
+- [x] 5.1 Move the **P2** entry in `BACKLOG.md` from positioned-future to a
       ✓-shipped entry describing the no-unique-key UNNEST fast path (gated on
       `all unique_key == None`, mixed batches keep the per-row claim path,
       `WITH ORDINALITY` for FIFO, behavior-preserving, conformance suite as the
       gate including the new mixed-batch scenario).
-- [ ] 5.2 Archive the change with `openspec archive postgres-enqueue-batch-unnest
+- [x] 5.2 Archive the change with `openspec archive postgres-enqueue-batch-unnest
       --skip-specs` (no spec delta — behavior-preserving, the existing `broker`
       spec already fixes the contract).

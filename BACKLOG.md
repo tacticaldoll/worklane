@@ -20,6 +20,22 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **Postgres `enqueue_batch` no-unique-key UNNEST fast path**
+  (`postgres-enqueue-batch-unnest`) — when every job in a batch has no
+  `unique_key`, `PostgresBroker::enqueue_batch` skips the per-row dedup/claim
+  loop and stores the whole batch with one multi-row `INSERT … SELECT FROM
+  UNNEST(…) WITH ORDINALITY … ORDER BY ord ON CONFLICT (id) DO NOTHING` (a new
+  `insert_batch_unnest` helper; the fixed-shape statement is precomputed in
+  `Queries`). `WITH ORDINALITY` pins `BIGSERIAL seq` assignment to input order so
+  the batch reserves back strict-FIFO — a plain `UNNEST` gives no such guarantee.
+  Batches with any unique-key job keep the existing advisory-lock-sorted per-row
+  path unchanged. A new `batch_mixed_unique_and_plain` conformance scenario
+  guards the `all(unique_key.is_none())` gate (a mixed batch must still dedup),
+  across every broker. Behavior-preserving (no `Broker`/`BatchEnqueue`/API/schema
+  change); the `worklane-test` Postgres batch battery is the regression gate, so
+  no spec delta (archived `--skip-specs`). Measured ~5,400 → ~9,000–10,000 jobs/s
+  on a no-unique-key batch (single-node `postgres:16`, N=5000, chunk=500),
+  narrowing the gap to `apalis` `push_bulk` from ~3.4× to ~1.3×.
 - ✓ **CLI job classification** (`cli-classify`) — `wl classify <job-id>` reports a
   job's lifecycle state (`Live` / `DeadLettered` / `CompletedOrUnknown`) via the
   existing `Broker::classify` point lookup, as a human-readable line or
@@ -194,11 +210,8 @@ Findings from the scan that motivated the **Redis hot-path script cache** (now
 shipped). Positioned here as separate future proposals — none is implemented by
 that change.
 
-- **P2 — Postgres `enqueue_batch` no-unique-key UNNEST fast path** — for batches
-  without unique keys, skip the per-row dedup machinery and use a single
-  multi-row `UNNEST` insert. Measured insert-shape ceiling ~15,450 jobs/s vs the
-  current ~5,500 (~2.8× headroom). Unique-key rows keep the existing per-row
-  claim path. Behavior-preserving; gated on a real batch-throughput consumer.
+- **P2 — Postgres `enqueue_batch` no-unique-key UNNEST fast path** — shipped (see
+  *Shipped*: `postgres-enqueue-batch-unnest`).
 - **P3 — quantified idle-poll tax** — 16 idle workers issue ~4,000 empty
   `reserve` queries/s on Postgres (~87,000/s on Redis). Document in
   `docs/known-limitations.md` as the cost of the poll-based design; explicitly
