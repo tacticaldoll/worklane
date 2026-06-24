@@ -196,6 +196,7 @@ macro_rules! for_each_batch_enqueue_scenario {
             batch_all_visible,
             batch_preserves_order,
             batch_intra_unique_dedup,
+            batch_mixed_unique_and_plain,
             batch_concurrent_overlapping_unique_no_deadlock,
             batch_empty,
         }
