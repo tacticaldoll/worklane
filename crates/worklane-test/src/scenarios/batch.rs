@@ -108,6 +108,51 @@ pub async fn batch_empty<H: BrokerContractHarness>(h: &H) {
     );
 }
 
+/// A batch mixing unique-key and plain jobs obeys the same contract as any
+/// batch: the unique-key jobs dedup, every plain job is stored, and input order
+/// is preserved. This guards a broker's batch fast/slow-path gate — a broker
+/// that routes a *whole* batch to a no-dedup multi-row fast path must do so only
+/// when no job carries a unique key. A gate that mis-fires on a mixed batch
+/// would store the duplicate unique-key job instead of deduping it, which this
+/// scenario catches.
+pub async fn batch_mixed_unique_and_plain<H: BrokerContractHarness>(h: &H) {
+    let b = h.broker();
+    let mut p1 = job("default");
+    p1.payload = b"p1".to_vec();
+    let mut k2 = job("default").with_unique_key("k");
+    k2.payload = b"k2".to_vec();
+    let mut p3 = job("default");
+    p3.payload = b"p3".to_vec();
+    let mut k4 = job("default").with_unique_key("k");
+    k4.payload = b"k4".to_vec();
+
+    let ids = batch_cap(&*b)
+        .enqueue_batch(vec![p1, k2, p3, k4])
+        .await
+        .unwrap();
+    assert_eq!(
+        ids.len(),
+        4,
+        "returned ids are 1:1 with the input, in order"
+    );
+    assert_eq!(ids[1], ids[3], "the two unique-key jobs dedup to one id");
+    assert_ne!(ids[0], ids[1], "plain and unique-key jobs are distinct");
+    assert_ne!(ids[0], ids[2], "the two plain jobs are distinct");
+
+    let mut found = vec![];
+    while let Some(r) = b.reserve(&lane("default")).await.unwrap() {
+        found.push(r.envelope.id);
+    }
+    // Three live jobs — p1, the single deduped key job, p3 — the second key job
+    // is a duplicate and is not stored.
+    assert_eq!(found.len(), 3, "the duplicate unique-key job is not stored");
+    assert_eq!(
+        found,
+        vec![ids[0], ids[1], ids[2]],
+        "stored jobs reserve in input order (plain, deduped key, plain)"
+    );
+}
+
 /// Concurrent batches whose unique keys overlap in opposite order must not
 /// deadlock: each batch completes and every shared key dedups to one live job.
 /// A broker that locks unique keys per row in input order would deadlock (e.g.
