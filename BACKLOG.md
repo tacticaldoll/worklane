@@ -212,11 +212,17 @@ that change.
 
 - **P2 — Postgres `enqueue_batch` no-unique-key UNNEST fast path** — shipped (see
   *Shipped*: `postgres-enqueue-batch-unnest`).
-- **P3 — quantified idle-poll tax** — 16 idle workers issue ~4,000 empty
-  `reserve` queries/s on Postgres (~87,000/s on Redis). Document in
-  `docs/known-limitations.md` as the cost of the poll-based design; explicitly
-  **do not** add LISTEN/NOTIFY — it reintroduces the commit serialization
-  worklane deliberately avoids. Mitigation is worker idle backoff.
+- **P3 — idle-poll tax (documented, no code change needed)** — the poll-based
+  design's idle cost is now recorded in `docs/known-limitations.md` ("Poll-Based
+  Idle Load"). Re-measured: 16 consumers spinning `reserve` on an empty lane
+  sustain ~2,500 empty reserves/s on Postgres and ~96,000/s on Redis (raw
+  round-trip rates, single-node localhost — correcting the earlier ~4,000 /
+  ~87,000 estimate). The doc frames these as per-call costs, not steady-state
+  worker load: `Worker::run` already paces idle polling via `poll_interval`
+  (default 1s) plus exponential idle backoff, so a default idle worker polls
+  about once per second. `LISTEN`/`NOTIFY` is explicitly **not** added — it
+  reintroduces the commit serialization worklane deliberately avoids. Revisit
+  only if a push-delivery backend is ever in scope.
 - **R1 — clock-skew conformance (forward direction already covered)** — the
   forward-step lease behavior (an in-flight lease expires → the job is
   redelivered → the superseded receipt is rejected as `StaleReservation`) is
