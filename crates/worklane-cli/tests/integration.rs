@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use worklane_core::{Broker, Lane, NewJob};
+use worklane_core::{Broker, JobId, Lane, NewJob};
 use worklane_sqlite::SqliteBroker;
 
 fn temp_db(name: &str) -> PathBuf {
@@ -139,4 +139,106 @@ async fn empty_stats_and_list() {
         .unwrap();
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
+}
+
+fn classify(db_path: &std::path::Path, id: &str) -> std::process::Output {
+    cli_command(db_path)
+        .arg("classify")
+        .arg(id)
+        .output()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn classify_reports_live_dead_and_completed() {
+    let path = temp_db("classify-states");
+    let broker = SqliteBroker::open(&path).unwrap();
+    // Distinct lanes so each reserve returns the intended job.
+    let (live_lane, dead_lane, done_lane) = (
+        Lane::try_from("classify_live").unwrap(),
+        Lane::try_from("classify_dead").unwrap(),
+        Lane::try_from("classify_done").unwrap(),
+    );
+
+    // Live: enqueued, not yet resolved.
+    let live = broker
+        .enqueue(NewJob::new(live_lane, "k", b"{}".to_vec(), 3))
+        .await
+        .unwrap();
+    let out = classify(&path, &live.to_string());
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.contains(&live.to_string()) && stdout.contains("Live"),
+        "{stdout}"
+    );
+
+    // DeadLettered: reserved then failed (fail dead-letters immediately).
+    let dead = broker
+        .enqueue(NewJob::new(dead_lane.clone(), "k", b"{}".to_vec(), 1))
+        .await
+        .unwrap();
+    let res = broker.reserve(&dead_lane).await.unwrap().unwrap();
+    assert_eq!(res.envelope.id, dead);
+    broker.fail(res.receipt, "boom".to_owned()).await.unwrap();
+    let stdout = String::from_utf8(classify(&path, &dead.to_string()).stdout).unwrap();
+    assert!(stdout.contains("DeadLettered"), "{stdout}");
+
+    // CompletedOrUnknown: acked job.
+    let done = broker
+        .enqueue(NewJob::new(done_lane.clone(), "k", b"{}".to_vec(), 3))
+        .await
+        .unwrap();
+    let res = broker.reserve(&done_lane).await.unwrap().unwrap();
+    assert_eq!(res.envelope.id, done);
+    broker.ack(res.receipt).await.unwrap();
+    let stdout = String::from_utf8(classify(&path, &done.to_string()).stdout).unwrap();
+    assert!(stdout.contains("CompletedOrUnknown"), "{stdout}");
+}
+
+#[tokio::test]
+async fn classify_unknown_id_is_completed_or_unknown() {
+    let path = temp_db("classify-unknown");
+    let _broker = SqliteBroker::open(&path).unwrap();
+
+    // A well-formed id that was never enqueued classifies as CompletedOrUnknown.
+    let stdout = String::from_utf8(classify(&path, &JobId::new().to_string()).stdout).unwrap();
+    assert!(stdout.contains("CompletedOrUnknown"), "{stdout}");
+}
+
+#[tokio::test]
+async fn classify_json_format() {
+    let path = temp_db("classify-json");
+    let broker = SqliteBroker::open(&path).unwrap();
+    let lane = Lane::try_from("classify_json").unwrap();
+    let id = broker
+        .enqueue(NewJob::new(lane, "k", b"{}".to_vec(), 3))
+        .await
+        .unwrap();
+
+    let out = cli_command(&path)
+        .arg("classify")
+        .arg(id.to_string())
+        .arg("--format")
+        .arg("json")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("\"state\":\"Live\""), "{stdout}");
+    assert!(stdout.contains(&format!("\"job_id\":\"{id}\"")), "{stdout}");
+}
+
+#[tokio::test]
+async fn classify_invalid_id_fails_before_connecting() {
+    // A path that does not exist: if the command connected, opening the broker
+    // would have to touch it. An invalid id must be rejected by clap first.
+    let path = temp_db("classify-invalid-never-created");
+    let out = classify(&path, "not-a-uuid");
+    assert!(
+        !out.status.success(),
+        "an invalid job id must exit non-zero"
+    );
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("invalid job id"), "stderr was: {stderr}");
 }

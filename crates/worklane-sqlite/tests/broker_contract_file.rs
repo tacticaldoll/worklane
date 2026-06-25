@@ -50,7 +50,7 @@ impl Drop for TempDb {
     }
 }
 
-const TEST_LEASE: Duration = Duration::from_secs(30);
+const TEST_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
 /// Required tier: a file-backed broker (pooled) with the default clock and lease.
 /// `_db` is declared after `broker` so the broker (and its pool) drops first,
@@ -137,9 +137,10 @@ impl TimedBrokerContractHarness for TimedFileSqliteHarness {
     }
 }
 
-// Draw both tiers from the single-source drivers in `worklane-test`; the emitter
-// turns each name into a `#[tokio::test]` against a fresh file-backed harness.
-macro_rules! emit_required {
+// Draw lifecycle and optional capability batteries from the single-source
+// drivers in `worklane-test`; the emitter turns each name into a `#[tokio::test]`
+// against a fresh file-backed harness.
+macro_rules! emit_capability {
     ($($name:ident),* $(,)?) => {
         $(worklane_test::contract_tests!(FileSqliteHarness::new(); $name);)*
     };
@@ -149,5 +150,9 @@ macro_rules! emit_timed {
         $(worklane_test::contract_tests!(TimedFileSqliteHarness::new(); $name);)*
     };
 }
-worklane_test::for_each_required_scenario!(emit_required);
+worklane_test::for_each_lifecycle_scenario!(emit_capability);
+worklane_test::for_each_dead_letter_scenario!(emit_capability);
+worklane_test::for_each_queue_stats_scenario!(emit_capability);
+worklane_test::for_each_batch_enqueue_scenario!(emit_capability);
+worklane_test::for_each_scheduled_scenario!(emit_capability);
 worklane_test::for_each_timed_scenario!(emit_timed);

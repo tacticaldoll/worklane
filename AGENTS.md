@@ -88,6 +88,42 @@ earliest:
 Do not add concurrency or durable-broker scope merely because a correctness
 foundation enables it. Keep the enabling contract change separate and small.
 
+## Strategy guardrail
+
+`worklane` is a verified lifecycle queue: its core contract is the job
+lifecycle, not a general transport API. The lifecycle is enqueue, reserve, ack,
+retry, fail, lease expiry, dead-lettering, scheduling, and uniqueness. Backends
+are interchangeable only when they pass the same behavioral conformance suite
+for that lifecycle.
+
+Use these tests before adding core surface area:
+
+- A feature belongs in the broker contract only when every supported backend can
+  implement it with the same observable lifecycle semantics.
+- A backend feature is not portable until it can be expressed against SQL and
+  Redis without changing public lifecycle semantics.
+- If a feature can live as a handler, wrapper, CLI command, metric,
+  documentation pattern, or application adapter, it stays out of the core
+  broker contract.
+  Example: a built-in HTTP webhook dispatcher stays out of core because making
+  HTTP calls is an application-level concern that can be implemented as a
+  standard job handler.
+
+Non-goals for the core:
+
+- It is not a general message bus.
+- It is not a workflow engine at the broker layer.
+- It is not a transport abstraction over every broker technology.
+- It is not dashboard-first operations software.
+- It does not promise exactly-once execution.
+- It does not replace idempotent handlers.
+- It does not own application architecture.
+
+When choosing between strategic improvements, prefer lifecycle correctness,
+then cross-backend behavioral conformance, then operator visibility into the
+lifecycle, then developer ergonomics around existing primitives, then
+higher-level orchestration patterns, then new backend breadth.
+
 ## Design principles
 
 General and meant to outlast any specific module. The concrete gates below
@@ -166,6 +202,54 @@ load-bearing abstraction; protect its portability.
     durable-backend confirmation that the contract is portable, not
     in-memory-shaped.
 
+## Boundary enforcement (executable governance)
+
+The crate-graph invariants above are no longer prose alone. `crates/worklane-governance`
+declares them as a [`modou`](https://crates.io/crates/modou) `Constitution` and a
+CI job (`governance` in `.github/workflows/rust.yml`) reacts when the graph
+drifts. Run it locally with:
+
+```bash
+cargo run -p worklane-governance -- check --manifest-path Cargo.toml
+```
+
+Currently enforced (severity `enforce`, the default):
+
+- **worklane-core portability** — `worklane-core` must not depend on any other
+  workspace crate. This is the *Broker design gate* and *Minimal contracts* made
+  executable: the contract root stays backend-agnostic.
+- **Backend substitutability** — each durable backend (`worklane-sqlite`,
+  `worklane-postgres`, `worklane-redis`) may depend only on `worklane-core` (plus
+  `worklane-test` for conformance), never on another backend or the facade.
+
+Scope is deliberately *least-commitment*: only invariants this file already
+asserts are encoded. Further candidates (facade-direction rules, intra-crate
+module layering) are deferred in `BACKLOG.md`, not pre-built.
+
+Operating rule: the constitution carries a manual `WORKSPACE_CRATES` list, so
+adding a workspace crate means adding it there — the `governance` gate fails
+until you do. Relaxing or removing a boundary follows the same discipline as a
+`Broker`-trait change: record why here before doing it.
+
+Rationale and rejected alternatives (per *Broker design gate* discipline of
+recording the "how else"):
+
+- **Why a binary + CI job, not a `#[test]`** — keeping enforcement out of
+  `cargo test` lets the rules run as their own fast, dependency-free gate
+  (alongside `lint`/`deny`) and matches `modou`'s intended `check
+  --manifest-path` usage; the test-embedded alternative was rejected as harder
+  to invoke locally with a clear exit code.
+- **Why declared boundaries, not `forbid` of internal crates by allowlist** — an
+  explicit per-crate forbid list reads as the invariant it protects; an
+  external-only allowlist would not express "depends on nothing internal."
+- **Why dogfood `modou` (0.1.0)** — `worklane` is its first real consumer, which
+  is exactly the *least commitment* test (introduce the abstraction with its
+  first consumer). Maturity risk is owned, not external.
+
+This is process/discipline knowledge, so it lives here and not in
+`openspec/specs/` — it changes no job-lifecycle behavior and carries no delta
+spec.
+
 ## Language
 
 - Write all OpenSpec artifacts (specs, proposals, designs, tasks) and code
@@ -224,7 +308,7 @@ handler → ack / retry / fail / dead-letter.
   enqueue/reserve/dispatch/ack/retry/fail/dead-letter is backlog — see `BACKLOG.md`.
 - **Layout:** Cargo workspace. Core crates: `worklane-core` (traits, job model,
   envelope, errors), `worklane-memory` (in-memory broker for dev/tests),
-  `worklane` (facade / public API, worker, client, canvas). Durable brokers:
+  `worklane` (facade / public API, worker, client, workflow). Durable brokers:
   `worklane-sqlite`, `worklane-postgres`, `worklane-redis`. Supporting crates:
   `worklane-scheduler` (cron), `worklane-pubsub` (topic routing),
   `worklane-otel` (trace-context propagation), `worklane-cli` (operator CLI),

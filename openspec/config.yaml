@@ -6,8 +6,8 @@ context: |
   worklane is a small, Rust-native async background job runner for Rust web
   services. Tagline: "Typed background jobs for Rust services." It lets services
   enqueue typed jobs and run workers with retries, ack/fail semantics,
-  dead-lettering, and pluggable brokers. Inspired by Celery but intentionally
-  smaller — do NOT treat it as a Celery clone.
+  dead-lettering, and pluggable brokers. It deliberately does less than
+  general-purpose task frameworks — small, typed, and conformance-checked.
 
   ## Core principle: protect the core loop
   The whole design protects this loop; everything else is backlog:
@@ -20,7 +20,7 @@ context: |
   fail with a retry policy; dead-letter after max attempts, plus dead-letter
   read / count / requeue / purge; priority queues; multiple lanes; unique-key
   dedup; batch enqueue; delayed and cron-scheduled jobs with HA scheduler
-  coordination; a durable result store; workflow canvas (chains / chords);
+  coordination; a durable result store; workflow fan-in/fan-out (sequences / fan-ins);
   OpenTelemetry trace-context propagation; an operator CLI (`wl`); tokio async;
   serde payloads; tracing logs; a broker conformance suite.
 

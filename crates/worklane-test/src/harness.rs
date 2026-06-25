@@ -18,10 +18,10 @@ use crate::ManualClock;
 /// trait itself.
 #[async_trait]
 pub trait BrokerContractHarness: Send + Sync {
-    /// The broker implementation under test. The conformance suite exercises the
-    /// full contract, so a tested broker must provide the optional dead-letter
-    /// and queue-stats capabilities in addition to the core `Broker` trait.
-    type Broker: Broker + DeadLetterStore + QueueStats;
+    /// The broker implementation under test. The mandatory lifecycle suite only
+    /// requires the core [`Broker`] trait; optional capability suites add their
+    /// own bounds when a broker opts into them.
+    type Broker: Broker;
 
     /// The broker for this scenario.
     fn broker(&self) -> Arc<Self::Broker>;
@@ -88,10 +88,10 @@ pub struct BrokerConfig {
 }
 
 impl BrokerConfig {
-    /// The default visibility lease: the single source of the value scenarios
-    /// build with and advance the clock past, so it cannot drift between the
-    /// config default and a scenario's own copy.
-    pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+    /// The default visibility lease scenarios build with and advance the clock
+    /// past. Sourced from `worklane_core::spi::DEFAULT_LEASE` so it cannot drift
+    /// from the broker default, a scenario's copy, or another backend.
+    pub const DEFAULT_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
     /// A default config: the [`DEFAULT_LEASE`](Self::DEFAULT_LEASE), unbounded
     /// redelivery, unbounded retention.

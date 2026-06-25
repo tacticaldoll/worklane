@@ -1,10 +1,11 @@
 # worklane
 
-> Typed background jobs for Rust services.
+> Conformance-verified background jobs for Rust services.
 
 `worklane` is a small, Rust-native async background job runner: enqueue typed
 jobs and run workers with retries, ack/fail semantics, dead-lettering, and
-pluggable brokers.
+pluggable brokers whose lifecycle behavior is verified by one shared
+conformance suite.
 
 > **Status: 0.1.0 baseline.** The core loop is solid across four brokers — in-memory,
 > SQLite, PostgreSQL, and Redis — all passing a shared conformance suite: typed
@@ -17,23 +18,22 @@ pluggable brokers.
 
 ## What makes it different
 
-Plenty of frameworks are "broker-agnostic." Celery, via Kombu, abstracts at the
-**transport** layer — it unifies the *messaging API* across RabbitMQ / Redis /
-SQS (emulating AMQP semantics on the non-AMQP ones). But job *behavior* — acks,
-visibility timeouts, retries, dead-lettering — is built on top and **varies by
-broker**, which is why Celery carries a long tail of per-broker caveats.
+Most "broker-agnostic" runners abstract at the **transport** layer: they unify
+the *messaging* API across backends, but job *behavior* — acks, visibility
+timeouts, retries, dead-lettering — is built on top and **varies by broker**,
+which is why such tools accumulate a long tail of per-broker caveats.
 
 `worklane` abstracts one layer up, at the **job lifecycle**. Every backend
 implements the same minimal `Broker` contract and must pass **one shared
 conformance suite** (`worklane-test`) — so behavior is *identical* across
-backends, verified rather than hoped. The contract is deliberately small enough
+backends, checked rather than assumed. The contract is deliberately small enough
 that this uniformity is actually achievable.
 
 ```text
              the core Broker contract (job lifecycle)
       enqueue · reserve · ack · retry · fail · lease · classify
    + optional capabilities via accessors: dead-letter inspect/requeue
-                          · queue stats · scheduling
+                          · batch · queue stats · scheduling
                                │ implemented by
       ┌──────────┬─────────────┼─────────────┬────────────────────┐
    in-memory   SQLite     PostgreSQL        Redis        (your own broker)
@@ -48,9 +48,22 @@ that this uniformity is actually achievable.
 
 So you pick the backend you already run (your SQL database, your Redis), switch
 between them without behavior surprises, and — once the broker SPI is opened —
-third parties can add a backend that *provably* behaves the same. It is **not** a
-Celery clone: it intentionally does less (no exchange/routing model, no broad
-transport list) so that what it does is small, typed, and conformance-checked.
+third parties can add a backend that *provably* behaves the same. It
+intentionally does less (no exchange/routing model, no broad transport list) so
+that what it does is small, typed, and conformance-checked.
+
+Broker authors should start with the custom broker guide in
+[`docs/custom-brokers.md`](docs/custom-brokers.md). The verified lifecycle is
+summarized in [`docs/lifecycle-semantics.md`](docs/lifecycle-semantics.md), and
+first-party capability coverage is tracked in
+[`docs/broker-conformance-matrix.md`](docs/broker-conformance-matrix.md).
+
+## When not to use worklane
+
+`worklane` is not a general message bus, a Kafka-style event stream, or a
+workflow engine at the broker layer. It does not promise exactly-once execution
+or remove the need for idempotent handlers. Use it when you want typed
+background jobs with verified lifecycle semantics across supported backends.
 
 ## Core loop
 
@@ -264,6 +277,11 @@ for the workflow, `openspec/specs/` for the authoritative job-lifecycle
 semantics, [`docs/development-flow.md`](docs/development-flow.md) for the
 change/commit checklist, [`docs/release-checklist.md`](docs/release-checklist.md)
 for crates.io release steps,
+[`docs/lifecycle-semantics.md`](docs/lifecycle-semantics.md) for a readable
+runtime semantics guide, [`docs/custom-brokers.md`](docs/custom-brokers.md) for
+broker-author SPI and conformance wiring,
+[`docs/broker-conformance-matrix.md`](docs/broker-conformance-matrix.md) for
+first-party suite coverage,
 [`docs/known-limitations.md`](docs/known-limitations.md) for support boundaries,
 and [`BACKLOG.md`](BACKLOG.md) for deferred ideas.
 

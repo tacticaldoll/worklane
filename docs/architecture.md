@@ -12,10 +12,10 @@ with retries, ack/fail semantics, dead-lettering, and pluggable brokers.
 ## The differentiator: a conformance-verified broker contract
 
 Many job runners are "broker-agnostic." The distinction here is the *layer* and
-the *verification*. Celery (via Kombu) abstracts at the **transport** layer — it
-unifies the messaging API across RabbitMQ / Redis / SQS but job behavior (acks,
-visibility timeouts, retries, dead-lettering) is layered on top and varies by
-broker. `worklane` abstracts at the **job-lifecycle** layer: every backend
+the *verification*. Transport-layer abstractions unify the messaging API across
+backends, but job behavior (acks, visibility timeouts, retries, dead-lettering)
+is layered on top and varies by broker. `worklane` abstracts at the
+**job-lifecycle** layer: every backend
 implements one minimal `Broker` contract and must pass **one shared conformance
 suite** (`worklane-test`), so behavior is identical across backends — verified,
 not hoped, and not a tail of per-broker caveats.
@@ -23,18 +23,20 @@ not hoped, and not a tail of per-broker caveats.
 ```text
         core Broker contract  (enqueue · reserve · ack · retry · fail
                   │             · lease · classify; + optional capabilities:
-                  │             dead-letter · stats · scheduling)
+                  │             batch · dead-letter · stats · scheduling)
    in-memory · SQLite · PostgreSQL · Redis · (third-party broker)
                   │
         all gated by the SAME conformance suite (worklane-test)
 ```
 
-This is what makes the planned broker SPI safe to open: a third-party backend is
-acceptable exactly when it passes the suite. The contract is kept deliberately
-small so that uniformity is achievable. See the README's *What makes it
-different* for the user-facing framing, and `BACKLOG.md` for the (parked) SPI /
-capability-segregation program that would turn "we support N backends" into
-"anyone can add one, safely."
+This is what makes the broker SPI safe to open: a third-party backend is
+acceptable exactly when it passes the lifecycle suite and any optional
+capability suites it claims. The contract is kept deliberately small so that
+uniformity is achievable. See the README's *What makes it different* for the
+user-facing framing, [`docs/custom-brokers.md`](custom-brokers.md) for broker
+author wiring, and
+[`docs/broker-conformance-matrix.md`](broker-conformance-matrix.md) for the
+first-party capability matrix.
 
 ## Core loop (the part we protect)
 
@@ -109,6 +111,9 @@ improvised in code. The shipped baseline includes:
   dead-letter*, *Dead-letter read*, and *Requeue from dead-letter* requirements.
 - **Error type design** — a single `#[non_exhaustive]` `Error` enum in
   `worklane-core`; see the API stability policy in `AGENTS.md`.
+
+For a fuller narrative summary of the lifecycle, see
+[`docs/lifecycle-semantics.md`](lifecycle-semantics.md).
 
 ## Documentation model
 

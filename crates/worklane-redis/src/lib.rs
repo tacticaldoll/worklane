@@ -73,9 +73,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
-use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
+use worklane_core::spi::{
+    MAX_DEAD_LETTER_SWEEP, SCHEMA_VERSION, SchemaVersionCheck, check_schema_version,
+    classify_state, decode_envelope, encode_envelope, nanos, receipt_key, stale,
+};
 use worklane_core::{
-    Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
+    BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
     ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
 };
 
@@ -83,18 +86,8 @@ mod result_store;
 mod scripts;
 pub use result_store::RedisResultStore;
 
-/// The default visibility lease duration.
-pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
-
-/// The storage-schema version, stored at `ns:schema_version`.
-///
-/// Version 1 is the **baseline** key layout. Redis stores have no in-place
-/// migration: a format change is not backward-compatible with data stored under a
-/// prior layout, so a store must be **drained before upgrading**. worklane is
-/// pre-1.0 with no deployed stores, so a store stamped with any other version is
-/// rejected (flush the namespace and recreate). A frozen format and a real version
-/// policy arrive at 1.0.
-const SCHEMA_VERSION: i64 = 1;
+/// The default visibility lease duration (re-exported single source).
+pub use worklane_core::spi::DEFAULT_LEASE;
 
 /// The `(envelope, error, attempts)` fields of one dead-record hash, each
 /// `Option` so a concurrent delete (nil reply) is tolerated rather than erroring.
@@ -112,6 +105,10 @@ pub struct RedisBroker {
     /// Maximum times a job may be delivered before it is dead-lettered on the
     /// next reserve; `None` (default) means unbounded.
     max_deliveries: Option<u32>,
+    /// Lifecycle Lua scripts, each built and SHA1-hashed once here and reused on
+    /// every operation (the Redis analogue of the Postgres broker's precomputed
+    /// `Queries`).
+    scripts: scripts::Scripts,
 }
 
 impl RedisBroker {
@@ -153,6 +150,7 @@ impl RedisBroker {
             retention: RetentionPolicy::new(),
             dlq_warning: UnboundedDlqWarning::default(),
             max_deliveries: None,
+            scripts: scripts::Scripts::new(),
         };
         broker.check_version().await?;
         Ok(broker)
@@ -207,16 +205,16 @@ impl RedisBroker {
         let mut conn = self.conn.clone();
         let key = self.key("schema_version");
         let current: Option<i64> = conn.get(&key).await.map_err(redis_err)?;
-        match current {
-            None => {
+        match check_schema_version(current) {
+            SchemaVersionCheck::Fresh => {
                 let _: () = conn.set(&key, SCHEMA_VERSION).await.map_err(redis_err)?;
             }
-            Some(v) if v == SCHEMA_VERSION => {}
+            SchemaVersionCheck::Match => {}
             // Redis is drain-don't-migrate: a store at any other version was written
             // under a different key layout that the current code would misread.
             // Reject (rather than bump the stamp) so the operator flushes the
             // namespace and re-enqueues. Pre-1.0 there is no in-place migration.
-            Some(v) => {
+            SchemaVersionCheck::Mismatch(v) => {
                 return Err(Error::Broker(format!(
                     "redis storage schema version {v} is not the supported baseline \
                      {SCHEMA_VERSION}; worklane is pre-1.0 and does not migrate redis storage \
@@ -291,48 +289,13 @@ impl RedisBroker {
 }
 
 #[async_trait]
-impl Broker for RedisBroker {
-    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
-        // Reject a lane that cannot be safely embedded in a redis key before
-        // storing anything.
-        lane_key_segment(&job.lane)?;
-        let available_at = nanos(self.clock.now().saturating_add(job.delay));
-        let unique_key = job.unique_key.clone().unwrap_or_default();
-        // `unique_key` is opaque application data and needs no key-safety check.
-        // Unlike a lane (which collides across key families — `ns:dead:{lane}` vs
-        // the `ns:dead:job:{id}` HASH) it appears only as the terminal segment of
-        // `ns:unique:{key}` in exact-match GET/SET/DEL, never in a SCAN/glob
-        // position, so no character can collide or be interpreted as a pattern.
-        // The framework deliberately fills it with `:`-bearing values (chord and
-        // chain idempotency keys, scheduled-fire keys). Empty (no key) is unchanged.
-        let id = job.id;
-        let envelope = job.into_envelope();
-        let blob = encode_envelope(&envelope)?;
-        let mut conn = self.conn.clone();
-        // The script stores the job, or — when the unique key is already held by a
-        // live job — returns that job's envelope; either way we decode the id.
-        let stored: Vec<u8> = redis::Script::new(&scripts::enqueue())
-            .arg(&self.namespace)
-            .arg(id.to_string())
-            .arg(envelope.lane.as_str())
-            .arg(available_at)
-            .arg(blob)
-            .arg(unique_key)
-            .arg(envelope.priority)
-            .invoke_async(&mut conn)
-            .await
-            .map_err(redis_err)?;
-        Ok(decode_envelope(&stored)?.id)
-    }
-
+impl BatchEnqueue for RedisBroker {
     async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
         if jobs.is_empty() {
             return Ok(Vec::new());
         }
 
-        let batch_src = scripts::enqueue_batch();
-        let script = redis::Script::new(&batch_src);
-        let mut invoker = script.arg(&self.namespace);
+        let mut invoker = self.scripts.enqueue_batch.arg(&self.namespace);
 
         for job in jobs {
             lane_key_segment(&job.lane)?;
@@ -363,6 +326,48 @@ impl Broker for RedisBroker {
 
         Ok(final_ids)
     }
+}
+
+#[async_trait]
+impl Broker for RedisBroker {
+    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
+        // Reject a lane that cannot be safely embedded in a redis key before
+        // storing anything.
+        lane_key_segment(&job.lane)?;
+        let available_at = nanos(self.clock.now().saturating_add(job.delay));
+        let unique_key = job.unique_key.clone().unwrap_or_default();
+        // `unique_key` is opaque application data and needs no key-safety check.
+        // Unlike a lane (which collides across key families — `ns:dead:{lane}` vs
+        // the `ns:dead:job:{id}` HASH) it appears only as the terminal segment of
+        // `ns:unique:{key}` in exact-match GET/SET/DEL, never in a SCAN/glob
+        // position, so no character can collide or be interpreted as a pattern.
+        // The framework deliberately fills it with `:`-bearing values (fan-in and
+        // sequence idempotency keys, scheduled-fire keys). Empty (no key) is unchanged.
+        let id = job.id;
+        let envelope = job.into_envelope();
+        let blob = encode_envelope(&envelope)?;
+        let mut conn = self.conn.clone();
+        // The script stores the job, or — when the unique key is already held by a
+        // live job — returns that job's envelope; either way we decode the id.
+        let stored: Vec<u8> = self
+            .scripts
+            .enqueue
+            .arg(&self.namespace)
+            .arg(id.to_string())
+            .arg(envelope.lane.as_str())
+            .arg(available_at)
+            .arg(blob)
+            .arg(unique_key)
+            .arg(envelope.priority)
+            .invoke_async(&mut conn)
+            .await
+            .map_err(redis_err)?;
+        Ok(decode_envelope(&stored)?.id)
+    }
+
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        Some(self)
+    }
 
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {
         let lane_seg = lane_key_segment(lane)?;
@@ -375,19 +380,14 @@ impl Broker for RedisBroker {
         // job it uses the same retention bounds as `fail` (0 = unbounded / no age
         // bound).
         let max = self.max_deliveries.unwrap_or(0);
-        let max_count = self
-            .retention
-            .max_count
-            .map(|c| i64::try_from(c).unwrap_or(i64::MAX))
-            .unwrap_or(0);
-        let age_cutoff = self
-            .retention
-            .max_age
-            .map(|a| now.saturating_sub(nanos(a)))
-            .unwrap_or(0);
+        // 0 is the script's "unbounded / no bound" sentinel for both fields.
+        let max_count = self.retention.keep_count().unwrap_or(0);
+        let age_cutoff = self.retention.age_cutoff_nanos(now).unwrap_or(0);
         let has_age_bound = i64::from(self.retention.max_age.is_some());
         let mut conn = self.conn.clone();
-        let res: Option<(Vec<u8>, u32)> = redis::Script::new(&scripts::reserve())
+        let res: Option<(Vec<u8>, u32)> = self
+            .scripts
+            .reserve
             .arg(&self.namespace)
             .arg(lane_seg)
             .arg(now)
@@ -397,6 +397,7 @@ impl Broker for RedisBroker {
             .arg(max_count)
             .arg(age_cutoff)
             .arg(has_age_bound)
+            .arg(MAX_DEAD_LETTER_SWEEP)
             .invoke_async(&mut conn)
             .await
             .map_err(redis_err)?;
@@ -413,7 +414,9 @@ impl Broker for RedisBroker {
     async fn ack(&self, receipt: ReservationReceipt) -> Result<()> {
         let now = nanos(self.clock.now());
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::ack())
+        let ok: i64 = self
+            .scripts
+            .ack
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -431,7 +434,9 @@ impl Broker for RedisBroker {
         // panic before `nanos` clamps to `i64::MAX`.
         let available_at = nanos(now_d.saturating_add(delay));
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::retry())
+        let ok: i64 = self
+            .scripts
+            .retry
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -447,7 +452,9 @@ impl Broker for RedisBroker {
         let now = nanos(now_d);
         let available_at = nanos(now_d.saturating_add(delay));
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::defer())
+        let ok: i64 = self
+            .scripts
+            .defer
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -476,7 +483,9 @@ impl Broker for RedisBroker {
             .unwrap_or(0);
         let has_age_bound = i64::from(self.retention.max_age.is_some());
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::fail())
+        let ok: i64 = self
+            .scripts
+            .fail
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -495,7 +504,9 @@ impl Broker for RedisBroker {
         let now = nanos(now_d);
         let lease_until = nanos(now_d.saturating_add(self.lease));
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::extend())
+        let ok: i64 = self
+            .scripts
+            .extend
             .arg(&self.namespace)
             .arg(receipt_key(&receipt)?)
             .arg(now)
@@ -513,23 +524,16 @@ impl Broker for RedisBroker {
         let job_key = self.key(&format!("job:{id}"));
         let dead_key = self.key(&format!("dead:job:{id}"));
 
-        let script = redis::Script::new(
-            "if redis.call('EXISTS', KEYS[1]) == 1 then return 1 \
-             elseif redis.call('EXISTS', KEYS[2]) == 1 then return 2 \
-             else return 0 end",
-        );
-        let state: i64 = script
+        let state: i64 = self
+            .scripts
+            .classify
             .key(job_key)
             .key(dead_key)
             .invoke_async(&mut conn)
             .await
             .map_err(redis_err)?;
 
-        match state {
-            1 => Ok(worklane_core::JobState::Live),
-            2 => Ok(worklane_core::JobState::DeadLettered),
-            _ => Ok(worklane_core::JobState::CompletedOrUnknown),
-        }
+        Ok(classify_state(Some(state)))
     }
 
     fn dead_letter_store(&self) -> Option<&dyn worklane_core::DeadLetterStore> {
@@ -617,7 +621,9 @@ impl worklane_core::DeadLetterStore for RedisBroker {
         // construction.
         let now = nanos(self.clock.now());
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::requeue())
+        let ok: i64 = self
+            .scripts
+            .requeue
             .arg(&self.namespace)
             .arg(id.to_string())
             .arg(now)
@@ -643,7 +649,9 @@ impl worklane_core::DeadLetterStore for RedisBroker {
         // hash and the lane list. The lane segment is validated key-safe.
         let segment = lane_key_segment(lane)?;
         let mut conn = self.conn.clone();
-        let removed: u64 = redis::Script::new(&scripts::purge_dead())
+        let removed: u64 = self
+            .scripts
+            .purge_dead
             .arg(&self.namespace)
             .arg(segment)
             .invoke_async(&mut conn)
@@ -660,7 +668,9 @@ impl worklane_core::QueueStats for RedisBroker {
         // jobs are still members). The lane segment is validated key-safe.
         let segment = lane_key_segment(lane)?;
         let mut conn = self.conn.clone();
-        let count: u64 = redis::Script::new(scripts::PENDING_COUNT)
+        let count: u64 = self
+            .scripts
+            .pending_count
             .arg(&self.namespace)
             .arg(segment)
             .invoke_async(&mut conn)
@@ -736,7 +746,9 @@ impl worklane_core::ScheduledStore for RedisBroker {
         let envelope = job.into_envelope();
         let blob = encode_envelope(&envelope)?;
         let mut conn = self.conn.clone();
-        let ok: i64 = redis::Script::new(&scripts::enqueue_scheduled())
+        let ok: i64 = self
+            .scripts
+            .enqueue_scheduled
             .key(key)
             // Encode the i64 occurrence order-preservingly into a fixed-width
             // string (offset-binary: +2^63 maps i64→u64, then 20-digit

@@ -1,14 +1,6 @@
 use crate::{PostgresBroker, pg_err};
+use worklane_core::spi::{SCHEMA_VERSION, SchemaVersionCheck, check_schema_version};
 use worklane_core::{Error, Result};
-
-/// The storage-schema version, stored in the `meta` table.
-///
-/// Version 1 is the **baseline** schema. worklane is pre-1.0 and has no stable
-/// on-disk format yet: there is no in-place migration between schema generations.
-/// A fresh database is created at the baseline; a database stamped with any other
-/// version is rejected (drop and recreate it). Migration discipline begins at 1.0,
-/// when the format is frozen.
-const SCHEMA_VERSION: i64 = 1;
 
 impl PostgresBroker {
     /// Create the baseline schema and stamp the version. A database already at the
@@ -84,8 +76,8 @@ impl PostgresBroker {
             .await
             .map_err(pg_err)?
             .map(|row| row.get(0));
-        match current {
-            None => {
+        match check_schema_version(current) {
+            SchemaVersionCheck::Fresh => {
                 // `meta` is a singleton (PK `singleton` defaults TRUE), so a second
                 // broker initializing the same schema concurrently — both seeing an
                 // empty table and both inserting — collides on the PK instead of
@@ -103,8 +95,8 @@ impl PostgresBroker {
                     .await
                     .map_err(pg_err)?;
             }
-            Some(v) if v == SCHEMA_VERSION => {}
-            Some(v) => {
+            SchemaVersionCheck::Match => {}
+            SchemaVersionCheck::Mismatch(v) => {
                 return Err(Error::Broker(format!(
                     "postgres storage schema version {v} is not the supported baseline \
                      {SCHEMA_VERSION}; worklane is pre-1.0 and does not migrate between schema \

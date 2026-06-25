@@ -6,7 +6,7 @@ use crate::client::JobBuilder;
 
 impl<'a> JobBuilder<'a> {
     /// Extract the underlying `NewJob` from this builder. Crate-internal: the
-    /// chord path needs the raw core job; app code goes through the enqueue
+    /// fan-in path needs the raw core job; app code goes through the enqueue
     /// methods so lane-registry and offload invariants are not bypassed.
     pub(crate) fn into_inner(self) -> NewJob {
         self.job
@@ -63,6 +63,11 @@ impl<'a> JobBuilder<'a> {
     }
 
     /// Fan out this job configuration across multiple lanes as an atomic batch.
+    ///
+    /// Requires the broker to provide the
+    /// [`BatchEnqueue`](worklane_core::BatchEnqueue) capability; returns
+    /// [`Error::UnsupportedCapability`](worklane_core::Error::UnsupportedCapability)
+    /// when it does not.
     pub async fn enqueue_to_lanes(
         self,
         lanes: impl IntoIterator<Item = Lane>,
@@ -96,7 +101,7 @@ impl<'a> JobBuilder<'a> {
             .iter()
             .map(|job| (job.id, job.payload.clone()))
             .collect();
-        let returned = match self.client.broker.enqueue_batch(jobs).await {
+        let returned = match self.client.enqueue_batch(jobs).await {
             Ok(returned) => returned,
             Err(err) => {
                 self.client

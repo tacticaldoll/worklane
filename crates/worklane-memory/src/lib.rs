@@ -19,15 +19,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use worklane_core::spi::MAX_DEAD_LETTER_SWEEP;
 use worklane_core::{
-    Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, JobState, Lane, NewJob, Reservation,
-    ReservationReceipt, Result, RetentionPolicy, SystemClock, UnboundedDlqWarning,
+    BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, JobState, Lane, NewJob,
+    Reservation, ReservationReceipt, Result, RetentionPolicy, SystemClock, UnboundedDlqWarning,
 };
 
-const MAX_DEAD_LETTER_SWEEP: u32 = 128;
-
-/// The default visibility lease duration.
-pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+/// The default visibility lease duration (re-exported single source).
+pub use worklane_core::spi::DEFAULT_LEASE;
 
 struct StoredJob {
     envelope: JobEnvelope,
@@ -296,14 +295,7 @@ impl Default for InMemoryBroker {
 }
 
 #[async_trait]
-impl Broker for InMemoryBroker {
-    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
-        check_payload_size(&job)?;
-        let now = self.clock.now();
-        let mut inner = self.lock();
-        Ok(insert_one(&mut inner, job, now))
-    }
-
+impl BatchEnqueue for InMemoryBroker {
     async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
         // Validate every job before mutating so an over-cap job fails the whole
         // batch atomically (no partial insert), matching the durable backends.
@@ -317,6 +309,20 @@ impl Broker for InMemoryBroker {
             ids.push(insert_one(&mut inner, job, now));
         }
         Ok(ids)
+    }
+}
+
+#[async_trait]
+impl Broker for InMemoryBroker {
+    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
+        check_payload_size(&job)?;
+        let now = self.clock.now();
+        let mut inner = self.lock();
+        Ok(insert_one(&mut inner, job, now))
+    }
+
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        Some(self)
     }
 
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {

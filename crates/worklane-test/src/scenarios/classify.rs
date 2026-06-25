@@ -56,7 +56,11 @@ pub async fn classify_live_for_pending_and_leased<H: BrokerContractHarness>(h: &
 }
 
 /// A requeued job is live again on its original lane.
-pub async fn classify_live_after_requeue<H: BrokerContractHarness>(h: &H) {
+pub async fn classify_live_after_requeue<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id = dead_letter(b.as_ref(), job("critical"), "boom").await;
     assert_eq!(
@@ -73,7 +77,11 @@ pub async fn classify_live_after_requeue<H: BrokerContractHarness>(h: &H) {
 
 /// The check is non-destructive: the record is still readable and a re-check
 /// still reports it present.
-pub async fn classify_is_non_destructive<H: BrokerContractHarness>(h: &H) {
+pub async fn classify_is_non_destructive<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id = dead_letter(b.as_ref(), job("critical"), "boom").await;
     assert_eq!(

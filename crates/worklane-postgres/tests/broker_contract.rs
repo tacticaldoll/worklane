@@ -60,7 +60,7 @@ fn unique_schema() -> String {
     )
 }
 
-const TEST_LEASE: Duration = Duration::from_secs(30);
+const TEST_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
 /// Required tier: a broker on its own schema with the default (wall) clock and a
 /// small pool.
@@ -145,7 +145,7 @@ impl TimedBrokerContractHarness for TimedPgHarness {
 
 /// Generate a `#[tokio::test]` per scenario that builds a fresh `PgHarness` and
 /// runs it, or visibly skips when no test database is configured.
-macro_rules! pg_required {
+macro_rules! pg_capability {
     ($($name:ident),* $(,)?) => {$(
         #[tokio::test]
         async fn $name() {
@@ -181,9 +181,13 @@ macro_rules! pg_timed {
     )*};
 }
 
-// Enumerate both tiers from the single-source drivers in `worklane-test`, so
-// Postgres runs an identical scenario set to every other backend and a scenario
-// can never be silently dropped from this list. `pg_required!` / `pg_timed!`
-// supply the env-gated harness wiring per name.
-worklane_test::for_each_required_scenario!(pg_required);
+// Enumerate lifecycle, optional capability, and timed batteries from the
+// single-source drivers in `worklane-test`, so Postgres runs an identical
+// supported scenario set to every other first-party backend and a scenario can
+// never be silently dropped from this list.
+worklane_test::for_each_lifecycle_scenario!(pg_capability);
+worklane_test::for_each_dead_letter_scenario!(pg_capability);
+worklane_test::for_each_queue_stats_scenario!(pg_capability);
+worklane_test::for_each_batch_enqueue_scenario!(pg_capability);
+worklane_test::for_each_scheduled_scenario!(pg_capability);
 worklane_test::for_each_timed_scenario!(pg_timed);

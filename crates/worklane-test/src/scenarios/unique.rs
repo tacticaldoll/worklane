@@ -107,13 +107,13 @@ pub async fn distinct_unique_keys_not_deduped<H: BrokerContractHarness>(h: &H) {
 }
 
 /// A `unique_key` is opaque application data: any characters are accepted and
-/// still dedup correctly. The framework itself generates keys bearing `:` (chord
-/// and chain idempotency keys, scheduled-fire keys), so a backend must not reject
+/// still dedup correctly. The framework itself generates keys bearing `:` (fan-in
+/// and sequence idempotency keys, scheduled-fire keys), so a backend must not reject
 /// or mangle them — this guards the redis key-scheme regression where `:` and
 /// glob characters were wrongly rejected.
 pub async fn unique_key_accepts_arbitrary_characters<H: BrokerContractHarness>(h: &H) {
     let b = h.broker();
-    let key = "chord:abc-*?[]:42";
+    let key = "fanin:abc-*?[]:42";
     let id1 = b
         .enqueue(job("default").with_unique_key(key))
         .await
@@ -127,7 +127,7 @@ pub async fn unique_key_accepts_arbitrary_characters<H: BrokerContractHarness>(h
         "an opaque key with `:`/glob chars must still dedup"
     );
     let other = b
-        .enqueue(job("default").with_unique_key("chord:abc-*?[]:43"))
+        .enqueue(job("default").with_unique_key("fanin:abc-*?[]:43"))
         .await
         .unwrap();
     assert_ne!(id1, other, "a distinct opaque key must not be deduplicated");

@@ -140,7 +140,7 @@ const RESERVE: &str = r#"
 local ns, lane, now, leaseUntil, receipt = ARGV[1], ARGV[2], tonumber(ARGV[3]), tonumber(ARGV[4]), ARGV[5]
 local max = tonumber(ARGV[6])
 local maxCount, ageCutoff, hasAgeBound = tonumber(ARGV[7]), tonumber(ARGV[8]), tonumber(ARGV[9])
-local sweep_cap = 128
+local sweep_cap = tonumber(ARGV[10])
 local swept = 0
 local prios = ns..':lane:'..lane..':prios'
 for _, p in ipairs(redis.call('ZREVRANGE', prios, 0, -1)) do
@@ -271,6 +271,16 @@ end
 return total
 "#;
 
+/// Classify a job by id: `1` = live (job hash exists), `2` = dead-lettered (dead
+/// hash exists), `0` = completed/unknown. Both existence checks run in one script
+/// so the by-id classification is atomic (no TOCTOU between the two `EXISTS`).
+/// Keyed by `KEYS[1]` (the `ns:job:{id}` hash) and `KEYS[2]` (the
+/// `ns:dead:job:{id}` hash); takes no `ARGV`.
+const CLASSIFY: &str = "\
+if redis.call('EXISTS', KEYS[1]) == 1 then return 1 \
+elseif redis.call('EXISTS', KEYS[2]) == 1 then return 2 \
+else return 0 end";
+
 pub(crate) fn enqueue() -> String {
     format!("{LUA_HELPERS}{ENQUEUE}")
 }
@@ -349,4 +359,52 @@ pub(crate) fn requeue() -> String {
 
 pub(crate) fn enqueue_scheduled() -> String {
     format!("{LUA_HELPERS}{ENQUEUE_SCHEDULED}")
+}
+
+/// Every lifecycle Lua script, each built — and SHA1-hashed by
+/// `redis::Script::new` — exactly once at broker construction and reused on every
+/// call. This is the Redis analogue of the Postgres broker's precomputed
+/// `Queries` struct: `Script::new` does the `format!` concatenation of
+/// [`LUA_HELPERS`] with each body and the SHA1 digest in its constructor, so
+/// building these once instead of per call removes that allocation and hashing
+/// from the throughput-critical consume loop.
+///
+/// The `scripts::*` body functions above remain the single source of script text;
+/// [`Scripts::new`] is the only caller that wraps them in a [`redis::Script`].
+pub(crate) struct Scripts {
+    pub(crate) enqueue: redis::Script,
+    pub(crate) enqueue_batch: redis::Script,
+    pub(crate) reserve: redis::Script,
+    pub(crate) ack: redis::Script,
+    pub(crate) retry: redis::Script,
+    pub(crate) defer: redis::Script,
+    pub(crate) fail: redis::Script,
+    pub(crate) extend: redis::Script,
+    pub(crate) requeue: redis::Script,
+    pub(crate) purge_dead: redis::Script,
+    pub(crate) pending_count: redis::Script,
+    pub(crate) enqueue_scheduled: redis::Script,
+    pub(crate) classify: redis::Script,
+}
+
+impl Scripts {
+    /// Build and hash every script once. Called from the `RedisBroker`
+    /// constructor; infallible (`redis::Script::new` does not return a `Result`).
+    pub(crate) fn new() -> Self {
+        Self {
+            enqueue: redis::Script::new(&enqueue()),
+            enqueue_batch: redis::Script::new(&enqueue_batch()),
+            reserve: redis::Script::new(&reserve()),
+            ack: redis::Script::new(&ack()),
+            retry: redis::Script::new(&retry()),
+            defer: redis::Script::new(&defer()),
+            fail: redis::Script::new(&fail()),
+            extend: redis::Script::new(&extend()),
+            requeue: redis::Script::new(&requeue()),
+            purge_dead: redis::Script::new(&purge_dead()),
+            pending_count: redis::Script::new(PENDING_COUNT),
+            enqueue_scheduled: redis::Script::new(&enqueue_scheduled()),
+            classify: redis::Script::new(CLASSIFY),
+        }
+    }
 }

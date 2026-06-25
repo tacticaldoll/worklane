@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use worklane::{
-    Broker, ChordResults, ChordWatcherJob, ChordWatcherPayload, Client, Job, JobContext,
+    Broker, Client, FanInResults, FanInWatcherJob, FanInWatcherPayload, Job, JobContext,
 };
 use worklane_core::{JobId, Lane, NewJob, ResultStore};
 use worklane_memory::InMemoryBroker;
@@ -95,7 +95,7 @@ impl Job for CallbackJob {
 }
 
 #[tokio::test]
-async fn test_chord_watcher_reschedule() {
+async fn test_fan_in_watcher_reschedule() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Arc::new(Client::new(broker.clone()));
     let result_store = Arc::new(DummyResultStore::new());
@@ -105,8 +105,8 @@ async fn test_chord_watcher_reschedule() {
     let dep_lane: Lane = "deps".parse().unwrap();
     let dep_id = enqueue_live_dependency(&broker, &dep_lane).await;
 
-    let payload = ChordWatcherPayload::new(
-        "test-chord".to_string(),
+    let payload = FanInWatcherPayload::new(
+        "test-fan-in".to_string(),
         vec![dep_id],
         "default".to_string(),
         CallbackJob::KIND.to_string(),
@@ -118,7 +118,7 @@ async fn test_chord_watcher_reschedule() {
     )
     .unwrap();
 
-    let watcher = ChordWatcherJob {
+    let watcher = FanInWatcherJob {
         client: client.clone(),
         result_store: result_store.clone(),
     };
@@ -143,12 +143,12 @@ async fn test_chord_watcher_reschedule() {
         .await
         .unwrap()
         .expect("watcher should be rescheduled");
-    assert_eq!(reserved.envelope.kind, ChordWatcherJob::KIND);
+    assert_eq!(reserved.envelope.kind, FanInWatcherJob::KIND);
 
-    // The unique key should be `cw:test-chord:2`.
+    // The unique key should be `fiw:test-fan-in:2`.
     // Verify it by trying to enqueue another job with the same key.
     let dup_id = client
-        .enqueue_unique::<CallbackJob>("cw:test-chord:2", CallbackJob { aggregated: false })
+        .enqueue_unique::<CallbackJob>("fiw:test-fan-in:2", CallbackJob { aggregated: false })
         .await
         .unwrap();
     assert_eq!(
@@ -158,7 +158,7 @@ async fn test_chord_watcher_reschedule() {
 }
 
 #[tokio::test]
-async fn test_chord_watcher_success() {
+async fn test_fan_in_watcher_success() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Arc::new(Client::new(broker.clone()));
     let result_store = Arc::new(DummyResultStore::new());
@@ -166,8 +166,8 @@ async fn test_chord_watcher_success() {
     let dep_lane: Lane = "deps".parse().unwrap();
     let dep_id = complete_dependency(&broker, &result_store, &dep_lane, &[1, 2, 3]).await;
 
-    let payload = ChordWatcherPayload::new(
-        "test-chord-success".to_string(),
+    let payload = FanInWatcherPayload::new(
+        "test-fan-in-success".to_string(),
         vec![dep_id],
         "default".to_string(),
         CallbackJob::KIND.to_string(),
@@ -179,7 +179,7 @@ async fn test_chord_watcher_success() {
     )
     .unwrap();
 
-    let watcher = ChordWatcherJob {
+    let watcher = FanInWatcherJob {
         client: client.clone(),
         result_store: result_store.clone(),
     };
@@ -208,7 +208,7 @@ async fn test_chord_watcher_success() {
 
     // The callback receives the aggregated results: the caller context plus each
     // dependency's output bytes, in dependency order.
-    let delivered: ChordResults<CallbackJob> =
+    let delivered: FanInResults<CallbackJob> =
         worklane_core::from_payload(&reserved.envelope.payload).unwrap();
     assert!(
         delivered.context.aggregated,
@@ -220,11 +220,11 @@ async fn test_chord_watcher_success() {
         "the callback receives each dependency's output bytes"
     );
 
-    // The unique key for the callback should be `chord:{chord_id}:callback`.
+    // The unique key for the callback should be `fanin:{fanin_id}:callback`.
     // Verify it by trying to enqueue another job with the same key.
     let dup_id = client
         .enqueue_unique::<CallbackJob>(
-            "chord:test-chord-success:callback",
+            "fanin:test-fan-in-success:callback",
             CallbackJob { aggregated: false },
         )
         .await
@@ -236,10 +236,10 @@ async fn test_chord_watcher_success() {
 }
 
 /// A dependency observed complete in an early generation, then evicted from the
-/// result store before a slower sibling completes, must NOT regress the chord:
-/// completion detection is monotonic, so the chord still fires its callback.
+/// result store before a slower sibling completes, must NOT regress the fan-in:
+/// completion detection is monotonic, so the fan-in still fires its callback.
 #[tokio::test]
-async fn test_chord_watcher_robust_to_result_eviction() {
+async fn test_fan_in_watcher_robust_to_result_eviction() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Arc::new(Client::new(broker.clone()));
     let result_store = Arc::new(DummyResultStore::new());
@@ -250,8 +250,8 @@ async fn test_chord_watcher_robust_to_result_eviction() {
     // result yet, so `is_live` reports it pending.
     let dep_slow = enqueue_live_dependency(&broker, &dep_lane).await;
 
-    let payload = ChordWatcherPayload::new(
-        "evict-chord".to_string(),
+    let payload = FanInWatcherPayload::new(
+        "evict-fan-in".to_string(),
         vec![dep_fast, dep_slow],
         "default".to_string(),
         CallbackJob::KIND.to_string(),
@@ -263,7 +263,7 @@ async fn test_chord_watcher_robust_to_result_eviction() {
     )
     .unwrap();
 
-    let watcher = ChordWatcherJob {
+    let watcher = FanInWatcherJob {
         client: client.clone(),
         result_store: result_store.clone(),
     };
@@ -286,8 +286,8 @@ async fn test_chord_watcher_robust_to_result_eviction() {
         .await
         .unwrap()
         .expect("gen 2 watcher should be rescheduled");
-    assert_eq!(gen2.envelope.kind, ChordWatcherJob::KIND);
-    let gen2_payload: ChordWatcherPayload =
+    assert_eq!(gen2.envelope.kind, FanInWatcherJob::KIND);
+    let gen2_payload: FanInWatcherPayload =
         worklane_core::from_payload(&gen2.envelope.payload).unwrap();
     assert_eq!(
         gen2_payload.dependencies(),
@@ -315,23 +315,23 @@ async fn test_chord_watcher_robust_to_result_eviction() {
     assert_eq!(
         reserved.envelope.kind,
         CallbackJob::KIND,
-        "the chord completed instead of regressing on the evicted result"
+        "the fan-in completed instead of regressing on the evicted result"
     );
     let dup_id = client
         .enqueue_unique::<CallbackJob>(
-            "chord:evict-chord:callback",
+            "fanin:evict-fan-in:callback",
             CallbackJob { aggregated: false },
         )
         .await
         .unwrap();
     assert_eq!(
         dup_id, reserved.envelope.id,
-        "callback holds the stable chord callback key"
+        "callback holds the stable fan-in callback key"
     );
 }
 
 #[tokio::test]
-async fn test_chord_watcher_ignores_result_bytes_for_live_dependency() {
+async fn test_fan_in_watcher_ignores_result_bytes_for_live_dependency() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Arc::new(Client::new(broker.clone()));
     let result_store = Arc::new(DummyResultStore::new());
@@ -339,8 +339,8 @@ async fn test_chord_watcher_ignores_result_bytes_for_live_dependency() {
     let dep_id = enqueue_live_dependency(&broker, &dep_lane).await;
     result_store.store(&dep_id, &[9, 9, 9]).await.unwrap();
 
-    let payload = ChordWatcherPayload::new(
-        "ghost-chord".to_string(),
+    let payload = FanInWatcherPayload::new(
+        "ghost-fan-in".to_string(),
         vec![dep_id],
         "default".to_string(),
         CallbackJob::KIND.to_string(),
@@ -351,7 +351,7 @@ async fn test_chord_watcher_ignores_result_bytes_for_live_dependency() {
         10,
     )
     .unwrap();
-    let watcher = ChordWatcherJob {
+    let watcher = FanInWatcherJob {
         client: client.clone(),
         result_store: result_store.clone(),
     };
@@ -371,11 +371,11 @@ async fn test_chord_watcher_ignores_result_bytes_for_live_dependency() {
         .await
         .unwrap()
         .expect("live dependency should reschedule watcher, not callback");
-    assert_eq!(reserved.envelope.kind, ChordWatcherJob::KIND);
+    assert_eq!(reserved.envelope.kind, FanInWatcherJob::KIND);
 }
 
 #[tokio::test]
-async fn test_chord_watcher_rejects_malformed_payloads() {
+async fn test_fan_in_watcher_rejects_malformed_payloads() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Arc::new(Client::new(broker.clone()));
     let result_store = Arc::new(DummyResultStore::new());
@@ -383,8 +383,8 @@ async fn test_chord_watcher_rejects_malformed_payloads() {
     let dep_id = complete_dependency(&broker, &result_store, &dep_lane, &[1]).await;
     let unknown_id = JobId::new();
 
-    let valid = ChordWatcherPayload::new(
-        "bad-chord".to_string(),
+    let valid = FanInWatcherPayload::new(
+        "bad-fan-in".to_string(),
         vec![dep_id],
         "default".to_string(),
         CallbackJob::KIND.to_string(),
@@ -395,7 +395,7 @@ async fn test_chord_watcher_rejects_malformed_payloads() {
         10,
     )
     .unwrap();
-    let watcher = ChordWatcherJob {
+    let watcher = FanInWatcherJob {
         client: client.clone(),
         result_store: result_store.clone(),
     };
@@ -411,34 +411,34 @@ async fn test_chord_watcher_rejects_malformed_payloads() {
 
     let mut no_deps = serde_json::to_value(&valid).unwrap();
     no_deps["dependencies"] = serde_json::json!([]);
-    let payload: ChordWatcherPayload = serde_json::from_value(no_deps).unwrap();
+    let payload: FanInWatcherPayload = serde_json::from_value(no_deps).unwrap();
     let err = watcher.run(ctx.clone(), payload).await.unwrap_err();
     assert!(format!("{err}").contains("no dependencies"));
 
     let mut duplicate_deps = serde_json::to_value(&valid).unwrap();
     duplicate_deps["dependencies"] = serde_json::json!([dep_id, dep_id]);
-    let payload: ChordWatcherPayload = serde_json::from_value(duplicate_deps).unwrap();
+    let payload: FanInWatcherPayload = serde_json::from_value(duplicate_deps).unwrap();
     let err = watcher.run(ctx.clone(), payload).await.unwrap_err();
     assert!(format!("{err}").contains("duplicate dependency"));
 
     let mut unknown_capture = serde_json::to_value(&valid).unwrap();
     unknown_capture["collected"] = serde_json::json!([[unknown_id, [7, 7]]]);
-    let payload: ChordWatcherPayload = serde_json::from_value(unknown_capture).unwrap();
+    let payload: FanInWatcherPayload = serde_json::from_value(unknown_capture).unwrap();
     let err = watcher.run(ctx, payload).await.unwrap_err();
     assert!(format!("{err}").contains("captured unknown dependency"));
 }
 
 /// A dependency that has been dead-lettered (exhausted its retries, so it never
-/// stores a result) must fail the chord fast — naming the dependency — instead of
+/// stores a result) must fail the fan-in fast — naming the dependency — instead of
 /// polling until `max_generations` is exhausted.
 #[tokio::test]
-async fn test_chord_watcher_fails_fast_on_dead_lettered_dependency() {
+async fn test_fan_in_watcher_fails_fast_on_dead_lettered_dependency() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Arc::new(Client::new(broker.clone()));
     let result_store = Arc::new(DummyResultStore::new());
 
     // Make a genuinely dead-lettered job: enqueue → reserve → fail. Its id is the
-    // chord dependency, and it will never store a result.
+    // fan-in dependency, and it will never store a result.
     let dep_lane: worklane_core::Lane = "deps".parse().unwrap();
     let dep_id = broker
         .enqueue(worklane_core::NewJob::new(
@@ -460,8 +460,8 @@ async fn test_chord_watcher_fails_fast_on_dead_lettered_dependency() {
         worklane_core::JobState::DeadLettered
     );
 
-    let payload = ChordWatcherPayload::new(
-        "dl-chord".to_string(),
+    let payload = FanInWatcherPayload::new(
+        "dl-fan-in".to_string(),
         vec![dep_id],
         "default".to_string(),
         CallbackJob::KIND.to_string(),
@@ -474,7 +474,7 @@ async fn test_chord_watcher_fails_fast_on_dead_lettered_dependency() {
     )
     .unwrap();
 
-    let watcher = ChordWatcherJob {
+    let watcher = FanInWatcherJob {
         client: client.clone(),
         result_store: result_store.clone(),
     };
@@ -491,7 +491,7 @@ async fn test_chord_watcher_fails_fast_on_dead_lettered_dependency() {
     let err = watcher
         .run(ctx, payload)
         .await
-        .expect_err("a dead-lettered dependency must fail the chord");
+        .expect_err("a dead-lettered dependency must fail the fan-in");
     let msg = format!("{err}");
     assert!(
         msg.contains("dead-lettered") && msg.contains(&dep_id.to_string()),
@@ -502,17 +502,17 @@ async fn test_chord_watcher_fails_fast_on_dead_lettered_dependency() {
     let lane = "default".parse().unwrap();
     assert!(
         broker.reserve(&lane).await.unwrap().is_none(),
-        "a failed chord must not enqueue a callback or another watcher"
+        "a failed fan-in must not enqueue a callback or another watcher"
     );
 }
 
 /// A dependency that *succeeded* but whose result was evicted before the watcher
-/// ever captured it must FAIL the chord: aggregation needs the value, so a
+/// ever captured it must FAIL the fan-in: aggregation needs the value, so a
 /// missing result cannot be aggregated. The broker reports it
 /// `CompletedOrUnknown` (acked, no result), and the watcher fails naming the
 /// dependency.
 #[tokio::test]
-async fn test_chord_watcher_fails_on_result_evicted_before_capture() {
+async fn test_fan_in_watcher_fails_on_result_evicted_before_capture() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Arc::new(Client::new(broker.clone()));
     let result_store = Arc::new(DummyResultStore::new());
@@ -541,8 +541,8 @@ async fn test_chord_watcher_fails_on_result_evicted_before_capture() {
         worklane_core::JobState::CompletedOrUnknown
     );
 
-    let payload = ChordWatcherPayload::new(
-        "evicted-chord".to_string(),
+    let payload = FanInWatcherPayload::new(
+        "evicted-fan-in".to_string(),
         vec![dep_id],
         "default".to_string(),
         CallbackJob::KIND.to_string(),
@@ -555,7 +555,7 @@ async fn test_chord_watcher_fails_on_result_evicted_before_capture() {
     )
     .unwrap();
 
-    let watcher = ChordWatcherJob {
+    let watcher = FanInWatcherJob {
         client: client.clone(),
         result_store: result_store.clone(),
     };
@@ -572,7 +572,7 @@ async fn test_chord_watcher_fails_on_result_evicted_before_capture() {
     let err = watcher
         .run(ctx, payload)
         .await
-        .expect_err("an evicted-before-capture result must fail the chord");
+        .expect_err("an evicted-before-capture result must fail the fan-in");
     let msg = format!("{err}");
     assert!(
         msg.contains(&dep_id.to_string()) && (msg.contains("evicted") || msg.contains("aggregate")),
@@ -583,6 +583,6 @@ async fn test_chord_watcher_fails_on_result_evicted_before_capture() {
     let lane = "default".parse().unwrap();
     assert!(
         broker.reserve(&lane).await.unwrap().is_none(),
-        "a chord that cannot aggregate must not enqueue a callback"
+        "a fan-in that cannot aggregate must not enqueue a callback"
     );
 }

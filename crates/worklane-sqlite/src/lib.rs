@@ -32,10 +32,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rusqlite::{Connection, OptionalExtension, params};
-use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
+use worklane_core::spi::{
+    MAX_DEAD_LETTER_SWEEP, classify_state, decode_envelope, encode_envelope, nanos, receipt_key,
+    stale,
+};
 use worklane_core::{
-    Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation, ReservationReceipt, Result,
-    RetentionPolicy, UnboundedDlqWarning, WallClock,
+    BatchEnqueue, Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation,
+    ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
 };
 
 mod conn;
@@ -56,8 +59,8 @@ mod schedules;
 /// expects, without taking their own (possibly mismatched) `rusqlite` dependency.
 pub use rusqlite;
 
-/// The default visibility lease duration.
-pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+/// The default visibility lease duration (re-exported single source).
+pub use worklane_core::spi::DEFAULT_LEASE;
 
 /// A SQLite-backed broker.
 pub struct SqliteBroker {
@@ -234,18 +237,7 @@ impl SqliteBroker {
 }
 
 #[async_trait]
-impl Broker for SqliteBroker {
-    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
-        let available_at = nanos(self.clock.now().saturating_add(job.delay));
-        self.run(move |conn| {
-            let tx = conn.unchecked_transaction().map_err(sql_err)?;
-            let id = insert_job(&tx, job, available_at)?;
-            tx.commit().map_err(sql_err)?;
-            Ok(id)
-        })
-        .await
-    }
-
+impl BatchEnqueue for SqliteBroker {
     async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
         let now_d = self.clock.now();
         self.run(move |conn| {
@@ -259,6 +251,24 @@ impl Broker for SqliteBroker {
             Ok(ids)
         })
         .await
+    }
+}
+
+#[async_trait]
+impl Broker for SqliteBroker {
+    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
+        let available_at = nanos(self.clock.now().saturating_add(job.delay));
+        self.run(move |conn| {
+            let tx = conn.unchecked_transaction().map_err(sql_err)?;
+            let id = insert_job(&tx, job, available_at)?;
+            tx.commit().map_err(sql_err)?;
+            Ok(id)
+        })
+        .await
+    }
+
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        Some(self)
     }
 
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {
@@ -312,7 +322,6 @@ impl Broker for SqliteBroker {
                     // transaction, and SQLite's single writer means that transaction
                     // blocks every other writer for its whole duration. After the cap
                     // we yield with no reservation; the next `reserve` resumes.
-                    const MAX_DEAD_LETTER_SWEEP: u32 = 128;
                     let mut swept = 0u32;
                     let outcome = loop {
                         let row: Option<(i64, i64, Vec<u8>)> = tx
@@ -487,11 +496,7 @@ impl Broker for SqliteBroker {
                 )
                 .optional()
                 .map_err(sql_err)?;
-            match state {
-                Some(1) => Ok(worklane_core::JobState::Live),
-                Some(2) => Ok(worklane_core::JobState::DeadLettered),
-                _ => Ok(worklane_core::JobState::CompletedOrUnknown),
-            }
+            Ok(classify_state(state.map(i64::from)))
         })
         .await
     }

@@ -54,10 +54,18 @@ async fn concurrent_opposing_batches_do_not_deadlock() {
         let (b1, b2) = (broker.clone(), broker.clone());
         let (ka1, kb1) = (ka.clone(), kb.clone());
         let (ka2, kb2) = (ka.clone(), kb.clone());
-        let t1 =
-            tokio::spawn(async move { b1.enqueue_batch(vec![job_key(&ka1), job_key(&kb1)]).await });
-        let t2 =
-            tokio::spawn(async move { b2.enqueue_batch(vec![job_key(&kb2), job_key(&ka2)]).await });
+        let t1 = tokio::spawn(async move {
+            b1.batch_enqueue()
+                .expect("Postgres broker supports batch enqueue")
+                .enqueue_batch(vec![job_key(&ka1), job_key(&kb1)])
+                .await
+        });
+        let t2 = tokio::spawn(async move {
+            b2.batch_enqueue()
+                .expect("Postgres broker supports batch enqueue")
+                .enqueue_batch(vec![job_key(&kb2), job_key(&ka2)])
+                .await
+        });
         let (r1, r2) = tokio::join!(t1, t2);
         r1.expect("task 1 panicked")
             .expect("batch [a,b] must not deadlock against [b,a]");

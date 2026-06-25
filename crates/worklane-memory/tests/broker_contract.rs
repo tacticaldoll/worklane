@@ -40,7 +40,7 @@ impl BrokerContractHarness for MemHarness {
 }
 
 /// Timed tier: a broker on a manual clock with a known lease.
-const TEST_LEASE: Duration = Duration::from_secs(30);
+const TEST_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
 struct TimedMemHarness {
     broker: Arc<InMemoryBroker>,
@@ -82,9 +82,10 @@ impl TimedBrokerContractHarness for TimedMemHarness {
     }
 }
 
-// Draw both tiers from the single-source drivers in `worklane-test`; the emitter
-// turns each name into a `#[tokio::test]` against a fresh in-process harness.
-macro_rules! emit_required {
+// Draw lifecycle and optional capability batteries from the single-source
+// drivers in `worklane-test`; the emitter turns each name into a `#[tokio::test]`
+// against a fresh in-process harness.
+macro_rules! emit_capability {
     ($($name:ident),* $(,)?) => {
         $(worklane_test::contract_tests!(MemHarness::new(); $name);)*
     };
@@ -94,5 +95,9 @@ macro_rules! emit_timed {
         $(worklane_test::contract_tests!(TimedMemHarness::new(); $name);)*
     };
 }
-worklane_test::for_each_required_scenario!(emit_required);
+worklane_test::for_each_lifecycle_scenario!(emit_capability);
+worklane_test::for_each_dead_letter_scenario!(emit_capability);
+worklane_test::for_each_queue_stats_scenario!(emit_capability);
+worklane_test::for_each_batch_enqueue_scenario!(emit_capability);
+worklane_test::for_each_scheduled_scenario!(emit_capability);
 worklane_test::for_each_timed_scenario!(emit_timed);

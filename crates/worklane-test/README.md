@@ -14,7 +14,7 @@ generate the tests:
 
 ```rust,ignore
 use std::sync::Arc;
-use worklane_test::{BrokerContractHarness, contract_tests, for_each_required_scenario};
+use worklane_test::{BrokerContractHarness, contract_tests};
 
 struct MyHarness { broker: Arc<MyBroker> }
 
@@ -22,20 +22,26 @@ struct MyHarness { broker: Arc<MyBroker> }
 impl BrokerContractHarness for MyHarness {
     type Broker = MyBroker;
     fn broker(&self) -> Arc<MyBroker> { self.broker.clone() }
-    // Override dead_letters / scheduled_store only if your broker exposes them.
 }
 
 // Emit one #[tokio::test] per scenario.
 macro_rules! emit { ($($n:ident),* $(,)?) =>
     { $(worklane_test::contract_tests!(MyHarness::new(); $n);)* } }
-for_each_required_scenario!(emit);
+worklane_test::for_each_lifecycle_scenario!(emit);
 ```
 
-Three tiers: `for_each_required_scenario!` (every broker),
-`for_each_timed_scenario!` (brokers with an advanceable clock — also implement
-`TimedBrokerContractHarness`), and `for_each_configured_scenario!`
-(poison/retention — implement `ConfigurableBrokerHarness`). Result stores use
-`result_store_contract!`. `ManualClock` is re-exported for timed tiers.
+Use `for_each_lifecycle_scenario!` for every broker. Opt into capability
+batteries only when the broker exposes them:
+`for_each_batch_enqueue_scenario!`, `for_each_dead_letter_scenario!`,
+`for_each_queue_stats_scenario!`, and `for_each_scheduled_scenario!`.
+For omitted optional capabilities, use `omitted_capability_test!` in your own
+test wiring so the absence is visible in test output and compatibility claims.
+
+Additional tiers: `for_each_timed_scenario!` (brokers with an advanceable clock,
+also implement `TimedBrokerContractHarness`) and
+`for_each_configured_scenario!` (poison/retention, implement
+`ConfigurableBrokerHarness`). Result stores use `result_store_contract!`.
+`ManualClock` is re-exported for timed tiers.
 
 ## Stability
 
