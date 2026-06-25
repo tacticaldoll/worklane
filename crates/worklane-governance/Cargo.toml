@@ -1,0 +1,19 @@
+[package]
+name = "worklane-governance"
+description = "Executable architectural governance for the worklane workspace (modou constitution)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+# Tooling, not a shipped artifact: never published to a registry. Keeping it out
+# of the release set is also why the MSRV gate excludes it (see rust.yml).
+publish = false
+
+[[bin]]
+name = "worklane-governance"
+path = "src/main.rs"
+
+[dependencies]
+modou = "0.1"

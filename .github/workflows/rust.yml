@@ -28,9 +28,24 @@ jobs:
     - name: Clippy all features
       run: cargo clippy --workspace --all-targets --all-features
 
+  # Architectural-governance gate: the crate-graph invariants AGENTS.md states
+  # in prose (worklane-core portability, backend substitutability) declared as a
+  # modou constitution and enforced reactively. Dependency-free and fast, so a
+  # boundary regression fails the build early. See crates/worklane-governance.
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - name: Check architectural boundaries
+      run: cargo run -p worklane-governance -- check --manifest-path Cargo.toml
+
   # MSRV gate: `rust-version = "1.85"` is a release contract, not just manifest
   # metadata. Latest stable can accept code that the declared minimum compiler
   # cannot, so keep this as a separate compile-compatibility check.
+  # worklane-governance is excluded: it is a publish=false dev tool, not part of
+  # the release/consumer MSRV contract, and need not track the library minimum.
   msrv:
     runs-on: ubuntu-latest
     steps:
@@ -38,9 +53,9 @@ jobs:
     - uses: dtolnay/rust-toolchain@1.85.0
     - uses: Swatinem/rust-cache@v2
     - name: Check default features
-      run: cargo check --workspace --all-targets
+      run: cargo check --workspace --exclude worklane-governance --all-targets
     - name: Check all features
-      run: cargo check --workspace --all-targets --all-features
+      run: cargo check --workspace --exclude worklane-governance --all-targets --all-features
 
   # Supply-chain gate: RustSec advisories, license policy, banned/wildcard deps,
   # and source allow-listing, all driven by deny.toml. Dependency-free and fast,

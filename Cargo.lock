@@ -1004,6 +1004,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "modou"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0ef63fea2cf2d9a2707e28f6a5d90dfbc718563a248c911d83d541b26636d36"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "nibble_vec"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2551,6 +2560,13 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "worklane-governance"
+version = "0.2.0"
+dependencies = [
+ "modou",
 ]
 
 [[package]]
