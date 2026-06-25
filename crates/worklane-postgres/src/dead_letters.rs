@@ -1,5 +1,5 @@
 use worklane_core::Result;
-use worklane_core::spi::{decode_envelope, nanos};
+use worklane_core::spi::decode_envelope;
 
 use crate::{PostgresBroker, pg_err};
 
@@ -12,8 +12,7 @@ async fn prune_dead_letters(
     if broker.retention.is_unbounded() {
         return Ok(());
     }
-    if let Some(max_age) = broker.retention.max_age {
-        let cutoff = now.saturating_sub(nanos(max_age));
+    if let Some(cutoff) = broker.retention.age_cutoff_nanos(now) {
         tx.execute(
             &format!(
                 "DELETE FROM {} WHERE lane = $1 AND dead_at < $2",
@@ -24,8 +23,7 @@ async fn prune_dead_letters(
         .await
         .map_err(pg_err)?;
     }
-    if let Some(max_count) = broker.retention.max_count {
-        let keep = i64::try_from(max_count).unwrap_or(i64::MAX);
+    if let Some(keep) = broker.retention.keep_count() {
         tx.execute(
             &format!(
                 "DELETE FROM {dead} WHERE lane = $1 AND seq NOT IN \

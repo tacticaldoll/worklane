@@ -1,5 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, params};
-use worklane_core::spi::{decode_envelope, nanos};
+use worklane_core::spi::decode_envelope;
 use worklane_core::{Result, RetentionPolicy};
 
 use crate::sql_err;
@@ -19,16 +19,14 @@ fn prune_dead_letters(
     if policy.is_unbounded() {
         return Ok(());
     }
-    if let Some(max_age) = policy.max_age {
-        let cutoff = now.saturating_sub(nanos(max_age));
+    if let Some(cutoff) = policy.age_cutoff_nanos(now) {
         conn.execute(
             "DELETE FROM dead WHERE lane = ?1 AND dead_at < ?2",
             params![lane, cutoff],
         )
         .map_err(sql_err)?;
     }
-    if let Some(max_count) = policy.max_count {
-        let keep = i64::try_from(max_count).unwrap_or(i64::MAX);
+    if let Some(keep) = policy.keep_count() {
         conn.execute(
             "DELETE FROM dead WHERE lane = ?1 AND seq NOT IN \
              (SELECT seq FROM dead WHERE lane = ?1 ORDER BY seq DESC LIMIT ?2)",

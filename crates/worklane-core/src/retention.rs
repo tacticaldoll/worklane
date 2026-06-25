@@ -55,6 +55,32 @@ impl RetentionPolicy {
     pub fn is_unbounded(&self) -> bool {
         self.max_age.is_none() && self.max_count.is_none()
     }
+
+    /// The dead-letter age cutoff, in integer nanoseconds, for a prune happening
+    /// at `now` (also nanoseconds): records dead-lettered before this instant are
+    /// over the [`max_age`](RetentionPolicy::max_age) bound. `None` if the policy
+    /// sets no age bound.
+    ///
+    /// A `max_age` exceeding `now` yields a negative cutoff; a `dead_at < cutoff`
+    /// delete then matches nothing (stored timestamps are non-negative), which is
+    /// the intended "too early to expire anything" behaviour. The subtraction only
+    /// truly saturates at the `i64` bound, where `nanos` has already clamped an
+    /// enormous `max_age` to `i64::MAX`.
+    ///
+    /// Shared so every backend computes the same cutoff and only its own
+    /// dialect-specific delete differs.
+    pub fn age_cutoff_nanos(&self, now: i64) -> Option<i64> {
+        self.max_age
+            .map(|age| now.saturating_sub(crate::spi::nanos(age)))
+    }
+
+    /// The per-lane keep bound as an `i64` row limit, saturating at `i64::MAX`.
+    /// `None` if the policy sets no [`max_count`](RetentionPolicy::max_count)
+    /// bound. Shared so backends agree on the saturation behaviour.
+    pub fn keep_count(&self) -> Option<i64> {
+        self.max_count
+            .map(|count| i64::try_from(count).unwrap_or(i64::MAX))
+    }
 }
 
 /// A one-shot operator warning that a broker is dead-lettering under an unbounded
@@ -125,5 +151,34 @@ mod tests {
         // on the same instance still warns. (Policy is fixed per broker in
         // practice; this just proves the guard is keyed on actually warning.)
         assert!(warning.warn_once(&RetentionPolicy::new()));
+    }
+
+    #[test]
+    fn age_cutoff_and_keep_count_are_none_when_unbounded() {
+        let p = RetentionPolicy::new();
+        assert_eq!(p.age_cutoff_nanos(1_000), None);
+        assert_eq!(p.keep_count(), None);
+    }
+
+    #[test]
+    fn age_cutoff_subtracts_max_age_and_floors_at_zero() {
+        let p = RetentionPolicy::new().with_max_age(Duration::from_nanos(300));
+        assert_eq!(p.age_cutoff_nanos(1_000), Some(700));
+        // A max_age older than `now` yields a negative cutoff; a `dead_at < cutoff`
+        // delete then matches nothing (timestamps are non-negative). This mirrors
+        // the prior per-backend `now.saturating_sub(...)` behaviour exactly.
+        assert_eq!(p.age_cutoff_nanos(100), Some(-200));
+    }
+
+    #[test]
+    fn keep_count_saturates_at_i64_max() {
+        assert_eq!(
+            RetentionPolicy::new().with_max_count(5).keep_count(),
+            Some(5)
+        );
+        assert_eq!(
+            RetentionPolicy::new().with_max_count(u64::MAX).keep_count(),
+            Some(i64::MAX)
+        );
     }
 }
