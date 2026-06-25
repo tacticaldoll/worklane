@@ -44,11 +44,11 @@ facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 
 ## 4. Adopt the classify mapping (D1)
 
-- [ ] 4.1 `worklane-sqlite` / `worklane-postgres`: call the core helper, adding
+- [x] 4.1 `worklane-sqlite` / `worklane-postgres`: call the core helper, adding
       `.map(i64::from)` to widen the `i32` status column (do NOT change the column
       read type). `worklane-redis`: wrap its bare `i64` in `Some(..)` and call the
       helper. Remove the three hand-rolled `1/2/_` matches.
-- [ ] 4.2 `cargo test --workspace` green (classify conformance covers
+- [x] 4.2 `cargo test --workspace` green (classify conformance covers
       Live/DeadLettered/CompletedOrUnknown on each backend); commit
       `refactor(cross-broker-decision-dedup): share classify mapping`.
 

@@ -74,7 +74,8 @@ use async_trait::async_trait;
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use worklane_core::spi::{
-    MAX_DEAD_LETTER_SWEEP, decode_envelope, encode_envelope, nanos, receipt_key, stale,
+    MAX_DEAD_LETTER_SWEEP, classify_state, decode_envelope, encode_envelope, nanos, receipt_key,
+    stale,
 };
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
@@ -549,11 +550,7 @@ impl Broker for RedisBroker {
             .await
             .map_err(redis_err)?;
 
-        match state {
-            1 => Ok(worklane_core::JobState::Live),
-            2 => Ok(worklane_core::JobState::DeadLettered),
-            _ => Ok(worklane_core::JobState::CompletedOrUnknown),
-        }
+        Ok(classify_state(Some(state)))
     }
 
     fn dead_letter_store(&self) -> Option<&dyn worklane_core::DeadLetterStore> {

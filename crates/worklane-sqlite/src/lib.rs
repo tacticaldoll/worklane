@@ -33,7 +33,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rusqlite::{Connection, OptionalExtension, params};
 use worklane_core::spi::{
-    MAX_DEAD_LETTER_SWEEP, decode_envelope, encode_envelope, nanos, receipt_key, stale,
+    MAX_DEAD_LETTER_SWEEP, classify_state, decode_envelope, encode_envelope, nanos, receipt_key,
+    stale,
 };
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation,
@@ -495,11 +496,7 @@ impl Broker for SqliteBroker {
                 )
                 .optional()
                 .map_err(sql_err)?;
-            match state {
-                Some(1) => Ok(worklane_core::JobState::Live),
-                Some(2) => Ok(worklane_core::JobState::DeadLettered),
-                _ => Ok(worklane_core::JobState::CompletedOrUnknown),
-            }
+            Ok(classify_state(state.map(i64::from)))
         })
         .await
     }
