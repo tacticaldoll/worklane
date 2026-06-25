@@ -70,4 +70,5 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 cargo deny check         # supply-chain gate (advisories/licenses/bans/sources)
+cargo run -p worklane-governance -- check --manifest-path Cargo.toml  # crate-boundary gate
 ```
