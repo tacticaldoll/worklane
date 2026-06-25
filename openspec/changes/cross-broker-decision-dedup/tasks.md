@@ -5,19 +5,19 @@ with broker-author audience docs; they are NOT re-exported from the `worklane`
 facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 `-D missing_docs`).
 
-- [ ] 1.1 Add `MAX_DEAD_LETTER_SWEEP` const to `spi` (single source of truth for
+- [x] 1.1 Add `MAX_DEAD_LETTER_SWEEP` const to `spi` (single source of truth for
       the per-reserve dead-letter sweep bound), documented.
-- [ ] 1.2 Add a classify helper in `spi` mapping `Option<i64>` → `JobState`
+- [x] 1.2 Add a classify helper in `spi` mapping `Option<i64>` → `JobState`
       (`1 → Live`, `2 → DeadLettered`, else/`None` → `CompletedOrUnknown`),
       documented; unit-test all arms incl. `None`.
-- [ ] 1.3 Add `SCHEMA_VERSION` const + a match-vs-reject *decision* helper to `spi`
+- [x] 1.3 Add `SCHEMA_VERSION` const + a match-vs-reject *decision* helper to `spi`
       (given the stored `Option<i64>`, report match vs. mismatch). **No message
       string in core** — remediation text stays per-backend (D3). Documented;
       unit-test match / mismatch / absent.
-- [ ] 1.4 Add a retention computation method on the core retention surface
+- [x] 1.4 Add a retention computation method on the core retention surface
       returning the age-cutoff instant and the count-keep bound from a
       `RetentionPolicy` + `now` (D4). Documented; unit-test bounded/unbounded.
-- [ ] 1.5 `cargo test -p worklane-core` green; commit
+- [x] 1.5 `cargo test -p worklane-core` green; commit
       `feat(cross-broker-decision-dedup): add shared core decisions to spi`.
 
 ## 2. Sweep-bound conformance gate (D6) — add on CURRENT code first
