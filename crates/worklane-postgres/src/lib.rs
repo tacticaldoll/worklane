@@ -32,7 +32,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use deadpool_postgres::Pool;
-use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
+use worklane_core::spi::{
+    MAX_DEAD_LETTER_SWEEP, decode_envelope, encode_envelope, nanos, receipt_key, stale,
+};
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation,
     ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
@@ -591,7 +593,6 @@ impl Broker for PostgresBroker {
                 // transaction (the rows are `FOR UPDATE`-locked for its duration).
                 // After the cap we yield with no reservation; the next `reserve`
                 // resumes the sweep. Bounded progress beats one unbounded transaction.
-                const MAX_DEAD_LETTER_SWEEP: u32 = 128;
                 let mut swept = 0u32;
                 let outcome = loop {
                     let candidate = tx

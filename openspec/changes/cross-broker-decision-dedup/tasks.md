@@ -31,14 +31,14 @@ facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 
 ## 3. Adopt the sweep cap (D2)
 
-- [ ] 3.1 `worklane-memory`: replace local `MAX_DEAD_LETTER_SWEEP` with the core
+- [x] 3.1 `worklane-memory`: replace local `MAX_DEAD_LETTER_SWEEP` with the core
       const.
-- [ ] 3.2 `worklane-sqlite`: replace local `const` with the core const.
-- [ ] 3.3 `worklane-postgres`: replace local `const` with the core const.
-- [ ] 3.4 `worklane-redis`: pass the core const into `RESERVE` as `ARGV[10]`;
+- [x] 3.2 `worklane-sqlite`: replace local `const` with the core const.
+- [x] 3.3 `worklane-postgres`: replace local `const` with the core const.
+- [x] 3.4 `worklane-redis`: pass the core const into `RESERVE` as `ARGV[10]`;
       replace the `local sweep_cap = 128` literal with `tonumber(ARGV[10])`; add
       the 10th `.arg()` at the call site IN THE SAME EDIT.
-- [ ] 3.5 `cargo test --workspace` green (the D6 scenario is the regression gate
+- [x] 3.5 `cargo test --workspace` green (the D6 scenario is the regression gate
       for 3.4); commit
       `refactor(cross-broker-decision-dedup): share dead-letter sweep cap`.
 

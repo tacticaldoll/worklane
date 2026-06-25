@@ -32,7 +32,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rusqlite::{Connection, OptionalExtension, params};
-use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
+use worklane_core::spi::{
+    MAX_DEAD_LETTER_SWEEP, decode_envelope, encode_envelope, nanos, receipt_key, stale,
+};
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation,
     ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
@@ -319,7 +321,6 @@ impl Broker for SqliteBroker {
                     // transaction, and SQLite's single writer means that transaction
                     // blocks every other writer for its whole duration. After the cap
                     // we yield with no reservation; the next `reserve` resumes.
-                    const MAX_DEAD_LETTER_SWEEP: u32 = 128;
                     let mut swept = 0u32;
                     let outcome = loop {
                         let row: Option<(i64, i64, Vec<u8>)> = tx

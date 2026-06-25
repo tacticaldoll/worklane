@@ -73,7 +73,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
-use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
+use worklane_core::spi::{
+    MAX_DEAD_LETTER_SWEEP, decode_envelope, encode_envelope, nanos, receipt_key, stale,
+};
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
     ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
@@ -411,6 +413,7 @@ impl Broker for RedisBroker {
             .arg(max_count)
             .arg(age_cutoff)
             .arg(has_age_bound)
+            .arg(MAX_DEAD_LETTER_SWEEP)
             .invoke_async(&mut conn)
             .await
             .map_err(redis_err)?;

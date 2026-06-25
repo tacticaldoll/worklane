@@ -140,7 +140,7 @@ const RESERVE: &str = r#"
 local ns, lane, now, leaseUntil, receipt = ARGV[1], ARGV[2], tonumber(ARGV[3]), tonumber(ARGV[4]), ARGV[5]
 local max = tonumber(ARGV[6])
 local maxCount, ageCutoff, hasAgeBound = tonumber(ARGV[7]), tonumber(ARGV[8]), tonumber(ARGV[9])
-local sweep_cap = 128
+local sweep_cap = tonumber(ARGV[10])
 local swept = 0
 local prios = ns..':lane:'..lane..':prios'
 for _, p in ipairs(redis.call('ZREVRANGE', prios, 0, -1)) do
