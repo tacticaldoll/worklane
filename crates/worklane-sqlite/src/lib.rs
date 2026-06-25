@@ -59,8 +59,8 @@ mod schedules;
 /// expects, without taking their own (possibly mismatched) `rusqlite` dependency.
 pub use rusqlite;
 
-/// The default visibility lease duration.
-pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+/// The default visibility lease duration (re-exported single source).
+pub use worklane_core::spi::DEFAULT_LEASE;
 
 /// A SQLite-backed broker.
 pub struct SqliteBroker {

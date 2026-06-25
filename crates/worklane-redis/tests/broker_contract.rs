@@ -31,7 +31,7 @@ fn unique_namespace() -> String {
     )
 }
 
-const TEST_LEASE: Duration = Duration::from_secs(30);
+const TEST_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
 /// Required tier: a broker on its own namespace with the default (wall) clock.
 struct RedisHarness {

@@ -25,8 +25,8 @@ use worklane_core::{
     Reservation, ReservationReceipt, Result, RetentionPolicy, SystemClock, UnboundedDlqWarning,
 };
 
-/// The default visibility lease duration.
-pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+/// The default visibility lease duration (re-exported single source).
+pub use worklane_core::spi::DEFAULT_LEASE;
 
 struct StoredJob {
     envelope: JobEnvelope,
