@@ -77,25 +77,25 @@ facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 
 ## 7. Docs
 
-- [ ] 7.1 Scan `docs/lifecycle-semantics.md`, `docs/architecture.md`,
+- [x] 7.1 Scan `docs/lifecycle-semantics.md`, `docs/architecture.md`,
       `docs/broker-conformance-matrix.md`, `docs/custom-brokers.md` for any
       "each backend implements X" claim about classify / sweep / schema versioning
       that is now centralized; update only stale claims (likely none).
-- [ ] 7.2 Confirm every new `pub` `spi` item (1.1–1.4) has rustdoc (gate in 8.2).
+- [x] 7.2 Confirm every new `pub` `spi` item (1.1–1.4) has rustdoc (gate in 8.2).
 
 ## 8. Verification (Definition of Done)
 
-- [ ] 8.1 `cargo build`, `cargo fmt --all --check`,
+- [x] 8.1 `cargo build`, `cargo fmt --all --check`,
       `cargo clippy --all-targets -- -D warnings`, `cargo deny check` clean.
-- [ ] 8.2 `RUSTDOCFLAGS="-D warnings -D missing_docs" cargo doc --workspace
+- [x] 8.2 `RUSTDOCFLAGS="-D warnings -D missing_docs" cargo doc --workspace
       --no-deps` clean (CI docs gate — must pass with the new `pub` items).
-- [ ] 8.3 `cargo test --workspace` green, including live Postgres + Redis
+- [x] 8.3 `cargo test --workspace` green, including live Postgres + Redis
       (`WORKLANE_POSTGRES_TEST_URL` / `WORKLANE_REDIS_TEST_URL` set) — D3's
       Postgres/Redis reject paths only run with live DBs.
-- [ ] 8.4 `cargo run -p worklane-governance -- check --manifest-path Cargo.toml`
+- [x] 8.4 `cargo run -p worklane-governance -- check --manifest-path Cargo.toml`
       clean (no new cross-crate edge; confirm the helpers use the core `Error`,
       not a backend error type).
-- [ ] 8.5 Confirm no `Broker` trait / core job-trait / `JobEnvelope` / on-disk
+- [x] 8.5 Confirm no `Broker` trait / core job-trait / `JobEnvelope` / on-disk
       schema / wire-format change. Grep the four backends + tests for any remaining
       copy of each lifted decision (sweep cap, classify match, `SCHEMA_VERSION`
       incl. the migration test const). Confirm `DEFAULT_LEASE` was intentionally

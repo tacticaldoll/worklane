@@ -36,6 +36,10 @@ decisions that all durable backends must make the same way:
 - stale-reservation error construction
 - credential redaction
 - backend name and lane-key validation helpers
+- job status-code to `JobState` classification
+- the per-reserve dead-letter sweep bound (`MAX_DEAD_LETTER_SWEEP`)
+- the storage `SCHEMA_VERSION` and its match-vs-reject decision (each backend
+  keeps its own remediation message)
 
 SPI items are intentionally not re-exported from the `worklane` facade. If a
 helper only serves one backend's local implementation convenience, keep it in

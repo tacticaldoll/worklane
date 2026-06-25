@@ -74,8 +74,8 @@ use async_trait::async_trait;
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use worklane_core::spi::{
-    MAX_DEAD_LETTER_SWEEP, SCHEMA_VERSION, SchemaVersionCheck, check_schema_version, classify_state,
-    decode_envelope, encode_envelope, nanos, receipt_key, stale,
+    MAX_DEAD_LETTER_SWEEP, SCHEMA_VERSION, SchemaVersionCheck, check_schema_version,
+    classify_state, decode_envelope, encode_envelope, nanos, receipt_key, stale,
 };
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
@@ -88,7 +88,6 @@ pub use result_store::RedisResultStore;
 
 /// The default visibility lease duration.
 pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
-
 
 /// The `(envelope, error, attempts)` fields of one dead-record hash, each
 /// `Option` so a concurrent delete (nil reply) is tolerated rather than erroring.
