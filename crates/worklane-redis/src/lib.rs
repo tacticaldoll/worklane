@@ -381,16 +381,9 @@ impl Broker for RedisBroker {
         // job it uses the same retention bounds as `fail` (0 = unbounded / no age
         // bound).
         let max = self.max_deliveries.unwrap_or(0);
-        let max_count = self
-            .retention
-            .max_count
-            .map(|c| i64::try_from(c).unwrap_or(i64::MAX))
-            .unwrap_or(0);
-        let age_cutoff = self
-            .retention
-            .max_age
-            .map(|a| now.saturating_sub(nanos(a)))
-            .unwrap_or(0);
+        // 0 is the script's "unbounded / no bound" sentinel for both fields.
+        let max_count = self.retention.keep_count().unwrap_or(0);
+        let age_cutoff = self.retention.age_cutoff_nanos(now).unwrap_or(0);
         let has_age_bound = i64::from(self.retention.max_age.is_some());
         let mut conn = self.conn.clone();
         let res: Option<(Vec<u8>, u32)> = self

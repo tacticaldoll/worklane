@@ -68,11 +68,11 @@ facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 
 ## 6. Adopt the retention computation (D4)
 
-- [ ] 6.1 `worklane-sqlite`, `worklane-postgres`, and the Redis reserve path
+- [x] 6.1 `worklane-sqlite`, `worklane-postgres`, and the Redis reserve path
       (`worklane-redis/src/lib.rs` cutoff feeding `RESERVE`) use the core retention
       method for the age-cutoff + keep-count; each keeps its own `DELETE`/sweep.
       Removes all three verbatim copies.
-- [ ] 6.2 `cargo test --workspace` green; commit
+- [x] 6.2 `cargo test --workspace` green; commit
       `refactor(cross-broker-decision-dedup): share retention prune math`.
 
 ## 7. Docs
