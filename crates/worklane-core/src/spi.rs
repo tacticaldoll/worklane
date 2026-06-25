@@ -58,6 +58,17 @@ pub const MAX_TRACE_CONTEXT_BYTES: usize = 8 * 1024;
 /// literal that could drift.
 pub const MAX_DEAD_LETTER_SWEEP: u32 = 128;
 
+/// The default reservation lease (visibility timeout) a broker applies when the
+/// caller does not set one.
+///
+/// When a job is reserved it is hidden from other workers for this long; if the
+/// worker neither acks, retries, nor fails within the window, the lease expires and
+/// the job becomes visible again (at-least-once redelivery). Every backend defaults
+/// to the same value, so it lives here as the single source rather than a
+/// per-backend `const`; each backend re-exports it
+/// (`worklane_<backend>::DEFAULT_LEASE`) for callers overriding the lease.
+pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+
 /// Serialize a job envelope to its opaque storage bytes.
 ///
 /// Rejects an envelope whose encoded form would exceed [`MAX_ENVELOPE_BYTES`] so
