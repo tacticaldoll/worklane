@@ -103,9 +103,9 @@ facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 
 ## 9. Archive bookkeeping
 
-- [ ] 9.1 Archive with `openspec archive cross-broker-decision-dedup --skip-specs`
+- [x] 9.1 Archive with `openspec archive cross-broker-decision-dedup --skip-specs`
       (no delta spec); commit
       `chore(openspec): archive cross-broker-decision-dedup`.
-- [ ] 9.2 Update `BACKLOG.md`: move the "Cross-broker logic dedup" item to
+- [x] 9.2 Update `BACKLOG.md`: move the "Cross-broker logic dedup" item to
       *Shipped* (note what was lifted), AND add a new deferred item to lift
       `DEFAULT_LEASE` (needs a re-export/deprecation API decision).
