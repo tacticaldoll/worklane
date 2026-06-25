@@ -31,15 +31,15 @@
 
 ## 4. Verification (Definition of Done)
 
-- [ ] 4.1 `cargo build`, `cargo fmt --all --check`,
+- [x] 4.1 `cargo build`, `cargo fmt --all --check`,
       `cargo clippy --all-targets -- -D warnings`, `cargo deny check` clean.
-- [ ] 4.2 `RUSTDOCFLAGS="-D warnings -D missing_docs" cargo doc --workspace --no-deps`
+- [x] 4.2 `RUSTDOCFLAGS="-D warnings -D missing_docs" cargo doc --workspace --no-deps`
       clean (the new `spi` `pub const` is documented).
-- [ ] 4.3 `cargo test --workspace` green, including live Postgres + Redis
+- [x] 4.3 `cargo test --workspace` green, including live Postgres + Redis
       (lease/poison/timed conformance is the regression gate).
-- [ ] 4.4 `cargo run -p worklane-governance -- check --manifest-path Cargo.toml`
+- [x] 4.4 `cargo run -p worklane-governance -- check --manifest-path Cargo.toml`
       clean (no new cross-crate edge).
-- [ ] 4.5 Grep confirms the default-lease value `Duration::from_secs(30)` survives
+- [x] 4.5 Grep confirms the default-lease value `Duration::from_secs(30)` survives
       in exactly one place (`worklane-core/src/spi.rs`); every `DEFAULT_LEASE` and
       `TEST_LEASE` is a re-export of or reference to it. Unrelated 30s values (worker
       circuit-breaker window, bounded-handler test) are explicitly not lease
@@ -47,8 +47,8 @@
 
 ## 5. Archive bookkeeping
 
-- [ ] 5.1 Archive with
+- [x] 5.1 Archive with
       `openspec archive default-lease-single-source --skip-specs` (no delta spec);
       commit `chore(openspec): archive default-lease-single-source`.
-- [ ] 5.2 Update `BACKLOG.md`: move the deferred "Lift `DEFAULT_LEASE` to core" item
+- [x] 5.2 Update `BACKLOG.md`: move the deferred "Lift `DEFAULT_LEASE` to core" item
       to *Shipped* (note the core-root home + per-backend `pub use`).
