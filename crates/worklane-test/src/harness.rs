@@ -88,10 +88,10 @@ pub struct BrokerConfig {
 }
 
 impl BrokerConfig {
-    /// The default visibility lease: the single source of the value scenarios
-    /// build with and advance the clock past, so it cannot drift between the
-    /// config default and a scenario's own copy.
-    pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+    /// The default visibility lease scenarios build with and advance the clock
+    /// past. Sourced from `worklane_core::spi::DEFAULT_LEASE` so it cannot drift
+    /// from the broker default, a scenario's copy, or another backend.
+    pub const DEFAULT_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
     /// A default config: the [`DEFAULT_LEASE`](Self::DEFAULT_LEASE), unbounded
     /// redelivery, unbounded retention.
