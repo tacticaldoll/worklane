@@ -32,7 +32,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use deadpool_postgres::Pool;
-use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
+use worklane_core::spi::{
+    MAX_DEAD_LETTER_SWEEP, classify_state, decode_envelope, encode_envelope, nanos, receipt_key,
+    stale,
+};
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation,
     ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
@@ -591,7 +594,6 @@ impl Broker for PostgresBroker {
                 // transaction (the rows are `FOR UPDATE`-locked for its duration).
                 // After the cap we yield with no reservation; the next `reserve`
                 // resumes the sweep. Bounded progress beats one unbounded transaction.
-                const MAX_DEAD_LETTER_SWEEP: u32 = 128;
                 let mut swept = 0u32;
                 let outcome = loop {
                     let candidate = tx
@@ -770,17 +772,8 @@ impl Broker for PostgresBroker {
             )
             .await
             .map_err(pg_err)?;
-        match row {
-            Some(r) => {
-                let state: i32 = r.get(0);
-                match state {
-                    1 => Ok(worklane_core::JobState::Live),
-                    2 => Ok(worklane_core::JobState::DeadLettered),
-                    _ => Ok(worklane_core::JobState::CompletedOrUnknown),
-                }
-            }
-            None => Ok(worklane_core::JobState::CompletedOrUnknown),
-        }
+        let state: Option<i32> = row.map(|r| r.get(0));
+        Ok(classify_state(state.map(i64::from)))
     }
 
     fn dead_letter_store(&self) -> Option<&dyn worklane_core::DeadLetterStore> {

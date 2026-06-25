@@ -270,6 +270,7 @@ macro_rules! for_each_configured_scenario {
             poison_delivery_bound_dead_letters,
             poison_skips_to_next_eligible_job,
             poison_delivery_bound_releases_unique_key,
+            poison_sweep_is_bounded_per_reserve,
             redelivery_unbounded_by_default,
             retention_no_policy_retains_everything,
             retention_max_count_bounds_dead_letters,
