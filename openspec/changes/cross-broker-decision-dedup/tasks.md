@@ -22,11 +22,11 @@ facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 
 ## 2. Sweep-bound conformance gate (D6) — add on CURRENT code first
 
-- [ ] 2.1 Add a `worklane-test` scenario: enqueue more than the cap of
+- [x] 2.1 Add a `worklane-test` scenario: enqueue more than the cap of
       expired/poison jobs on one lane; assert a single `reserve` dead-letters a
       bounded number and yields empty, AND a subsequent `reserve` continues the
       sweep (bounded-progress). Runs across all four backends.
-- [ ] 2.2 Run it against unmodified code (green = it pins existing behaviour);
+- [x] 2.2 Run it against unmodified code (green = it pins existing behaviour);
       commit `test(cross-broker-decision-dedup): pin dead-letter sweep bound`.
 
 ## 3. Adopt the sweep cap (D2)
