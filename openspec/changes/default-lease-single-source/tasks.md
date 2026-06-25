@@ -1,20 +1,20 @@
 ## 1. Core definition
 
-- [ ] 1.1 Add `pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);` to
+- [x] 1.1 Add `pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);` to
       `worklane_core::spi` (beside `MAX_DEAD_LETTER_SWEEP`), with a doc comment
       naming it the default reservation lease / visibility timeout and the
       broker-author audience (CI docs gate is `-D missing_docs`).
-- [ ] 1.2 `cargo test -p worklane-core` + `cargo doc -p worklane-core` green; commit
+- [x] 1.2 `cargo test -p worklane-core` + `cargo doc -p worklane-core` green; commit
       `feat(default-lease-single-source): add spi::DEFAULT_LEASE`.
 
 ## 2. Backends re-export the core const (D2)
 
-- [ ] 2.1 `worklane-memory`: replace the local `pub const DEFAULT_LEASE` with
+- [x] 2.1 `worklane-memory`: replace the local `pub const DEFAULT_LEASE` with
       `pub use worklane_core::spi::DEFAULT_LEASE;`; confirm internal uses resolve.
-- [ ] 2.2 `worklane-sqlite`: same.
-- [ ] 2.3 `worklane-postgres`: same.
-- [ ] 2.4 `worklane-redis`: same.
-- [ ] 2.5 `cargo build --workspace` green (existing
+- [x] 2.2 `worklane-sqlite`: same.
+- [x] 2.3 `worklane-postgres`: same.
+- [x] 2.4 `worklane-redis`: same.
+- [x] 2.5 `cargo build --workspace` green (existing
       `worklane_<backend>::DEFAULT_LEASE` paths still resolve); commit
       `refactor(default-lease-single-source): re-export core DEFAULT_LEASE`.
 

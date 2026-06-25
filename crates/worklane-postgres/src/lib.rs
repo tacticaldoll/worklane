@@ -60,8 +60,8 @@ use dead_letters::dead_letter_seq;
 use jobs::find_valid_row_locked;
 use queries::Queries;
 
-/// The default visibility lease duration.
-pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+/// The default visibility lease duration (re-exported single source).
+pub use worklane_core::spi::DEFAULT_LEASE;
 
 /// The default connection-pool size.
 pub const DEFAULT_POOL_SIZE: usize = 10;
