@@ -74,8 +74,8 @@ use async_trait::async_trait;
 use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
 use worklane_core::spi::{
-    MAX_DEAD_LETTER_SWEEP, classify_state, decode_envelope, encode_envelope, nanos, receipt_key,
-    stale,
+    MAX_DEAD_LETTER_SWEEP, SCHEMA_VERSION, SchemaVersionCheck, check_schema_version, classify_state,
+    decode_envelope, encode_envelope, nanos, receipt_key, stale,
 };
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, Lane, NewJob, Reservation,
@@ -89,15 +89,6 @@ pub use result_store::RedisResultStore;
 /// The default visibility lease duration.
 pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
 
-/// The storage-schema version, stored at `ns:schema_version`.
-///
-/// Version 1 is the **baseline** key layout. Redis stores have no in-place
-/// migration: a format change is not backward-compatible with data stored under a
-/// prior layout, so a store must be **drained before upgrading**. worklane is
-/// pre-1.0 with no deployed stores, so a store stamped with any other version is
-/// rejected (flush the namespace and recreate). A frozen format and a real version
-/// policy arrive at 1.0.
-const SCHEMA_VERSION: i64 = 1;
 
 /// The `(envelope, error, attempts)` fields of one dead-record hash, each
 /// `Option` so a concurrent delete (nil reply) is tolerated rather than erroring.
@@ -215,16 +206,16 @@ impl RedisBroker {
         let mut conn = self.conn.clone();
         let key = self.key("schema_version");
         let current: Option<i64> = conn.get(&key).await.map_err(redis_err)?;
-        match current {
-            None => {
+        match check_schema_version(current) {
+            SchemaVersionCheck::Fresh => {
                 let _: () = conn.set(&key, SCHEMA_VERSION).await.map_err(redis_err)?;
             }
-            Some(v) if v == SCHEMA_VERSION => {}
+            SchemaVersionCheck::Match => {}
             // Redis is drain-don't-migrate: a store at any other version was written
             // under a different key layout that the current code would misread.
             // Reject (rather than bump the stamp) so the operator flushes the
             // namespace and re-enqueues. Pre-1.0 there is no in-place migration.
-            Some(v) => {
+            SchemaVersionCheck::Mismatch(v) => {
                 return Err(Error::Broker(format!(
                     "redis storage schema version {v} is not the supported baseline \
                      {SCHEMA_VERSION}; worklane is pre-1.0 and does not migrate redis storage \

@@ -54,15 +54,15 @@ facade. Every new `pub` item MUST carry a doc comment (the CI docs gate is
 
 ## 5. Adopt the schema-version const + decision (D3)
 
-- [ ] 5.1 `worklane-sqlite` / `worklane-postgres`: keep the dialect read/write
+- [x] 5.1 `worklane-sqlite` / `worklane-postgres`: keep the dialect read/write
       (`PRAGMA user_version` / meta row) AND each backend's own remediation
       message; call the core decision helper and drop the local `SCHEMA_VERSION`
       const + inline policy.
-- [ ] 5.2 `worklane-redis`: route the `ns:schema_version` baseline check through
+- [x] 5.2 `worklane-redis`: route the `ns:schema_version` baseline check through
       the core const + decision, keeping the Redis "flush / re-enqueue" message.
-- [ ] 5.3 Point `worklane-redis/tests/migration.rs` `BASELINE_VERSION` at the core
+- [x] 5.3 Point `worklane-redis/tests/migration.rs` `BASELINE_VERSION` at the core
       `SCHEMA_VERSION` so no fifth hand-synced copy survives.
-- [ ] 5.4 `cargo test --workspace` green, INCLUDING `migration.rs` for all three
+- [x] 5.4 `cargo test --workspace` green, INCLUDING `migration.rs` for all three
       backends (the Redis test pins its message wording); commit
       `refactor(cross-broker-decision-dedup): share schema-version policy`.
 
