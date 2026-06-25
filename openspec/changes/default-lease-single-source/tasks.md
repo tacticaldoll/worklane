@@ -20,13 +20,13 @@
 
 ## 3. Test-side defaults reference the core value (D3)
 
-- [ ] 3.1 `worklane-test`: initialize `BrokerConfig::DEFAULT_LEASE` from
+- [x] 3.1 `worklane-test`: initialize `BrokerConfig::DEFAULT_LEASE` from
       `worklane_core::spi::DEFAULT_LEASE` instead of a `Duration::from_secs(30)`
       literal.
-- [ ] 3.2 Redirect each backend contract test's `const TEST_LEASE`
+- [x] 3.2 Redirect each backend contract test's `const TEST_LEASE`
       (`crates/worklane-{memory,sqlite,postgres,redis}/tests/broker_contract*.rs`)
       to `worklane_core::spi::DEFAULT_LEASE`.
-- [ ] 3.3 `cargo test --workspace` green; commit
+- [x] 3.3 `cargo test --workspace` green; commit
       `refactor(default-lease-single-source): source test lease defaults from core`.
 
 ## 4. Verification (Definition of Done)
