@@ -266,6 +266,11 @@ spec.
   (e.g. `feat(add-auth): add password reset endpoint`).
 - Write commit messages in English (per the Language policy).
 - Never bundle unrelated changes into one commit.
+- Self-describing logs: no PR or issue numbers (`#123`, `fixes #45`) in commit
+  messages, PR titles, or squash-merge logs. The history must read on its own,
+  without a trip to the forge to resolve a reference. Squash merges inherit the
+  PR title and body, so this binds PR titles too: describe the change, don't
+  point at its ticket.
 
 ### Commit flow across the OpenSpec lifecycle
 
