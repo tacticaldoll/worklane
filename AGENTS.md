@@ -277,6 +277,14 @@ spec.
   without a trip to the forge to resolve a reference. Squash merges inherit the
   PR title and body, so this binds PR titles too: describe the change, don't
   point at its ticket.
+- No AI or tool signatures: commit messages and PR titles/bodies carry no
+  `Co-Authored-By` trailer, no "Generated with …" footer, and no AI attribution
+  of any kind. The history reads as a human-authored engineering record. This
+  overrides any signature an agent's harness injects by default.
+- `release: X.Y.Z` is a reserved commit subject used only for release commits on
+  `main` (see `docs/development-flow.md` → Branches and Releases). It is exempt
+  from the type list and scope rules above; everywhere else use the Conventional
+  Commit types.
 
 ### Commit flow across the OpenSpec lifecycle
 

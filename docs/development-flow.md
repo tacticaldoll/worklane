@@ -4,6 +4,34 @@ This project uses OpenSpec for spec-driven development. `AGENTS.md` is the
 authoritative contributor and agent guide; this file is a short checklist for
 running one change with a matching commit rhythm.
 
+## Branches and Releases
+
+`main` is release-only: it holds exactly one commit per published version,
+`release: X.Y.Z`, tagged `vX.Y.Z`. No development happens on `main`.
+
+Development for the next version happens on a `release/X.Y.Z` branch, started
+from the previous `release:` commit. Work reaches a release through two squashes:
+
+1. **Feature branch → `release/X.Y.Z` (squash).** Develop a coherent milestone
+   on a feature branch; its WIP commits are free-form and discarded by the
+   squash. The PR squash-merges into the dev branch as **one** Conventional
+   Commit (`feat|fix|docs|refactor|…`) obeying every `## Commits` rule in
+   `AGENTS.md`. The PR title becomes the squash subject, so it is equally bound
+   by the self-describing, no-numbers, and no-AI-signature rules.
+2. **`release/X.Y.Z` → `main` (release cut).** When the version is published to
+   crates.io, collapse the dev branch into a single `release: X.Y.Z` commit on
+   `main` and tag it `vX.Y.Z`.
+
+**Honesty rule:** a `release: X.Y.Z` commit's tree must equal the source
+actually published to crates.io for that version. Anchor the cut to the real
+publish point (verified against the crates.io publish time), not to whatever the
+dev-branch tip happens to be at the moment of the cut.
+
+The release cut drops the dev branch's per-PR commits from `main` — including
+the OpenSpec `propose`/`sync`/`archive` commits — but nothing is lost: the
+granular history stays on `release/X.Y.Z`, and the spec artifacts under
+`openspec/specs/` plus archived changes remain in the tree.
+
 ## One Change
 
 1. Explore the current specs and code before editing:
@@ -27,6 +55,13 @@ running one change with a matching commit rhythm.
    - commit as `chore(openspec): archive <change-name>`
 
 ## Commit Granularity
+
+Under the squash model above, one milestone = one PR = one squashed commit on
+the dev branch. The granularity below therefore describes what belongs in a
+single squashed PR, not raw feature-branch WIP commits (those are discarded by
+the squash). The OpenSpec lifecycle phases map onto PRs, so a long change may
+land as several squashed commits (e.g. a `propose` PR, one or more apply PRs, a
+`sync` PR) rather than one.
 
 Apply commits should be larger than individual task checkboxes and smaller than
 an entire risky feature. Prefer one commit per coherent milestone that builds,
