@@ -219,17 +219,20 @@ Currently enforced (severity `enforce`, the default):
   workspace crate. This is the *Broker design gate* and *Minimal contracts* made
   executable: the contract root stays backend-agnostic.
 - **Backend substitutability** — each durable backend (`worklane-sqlite`,
-  `worklane-postgres`, `worklane-redis`) may depend only on `worklane-core` (plus
-  `worklane-test` for conformance), never on another backend or the facade.
+  `worklane-postgres`, `worklane-redis`) may depend on only `worklane-core` among
+  workspace crates, never on another backend or the facade. The rule scopes to
+  normal `[dependencies]`, so the dev-dependency on `worklane-test` (the
+  conformance suite that proves substitutability) is allowed without listing it.
 
 Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate
 module layering) are deferred in `BACKLOG.md`, not pre-built.
 
-Operating rule: the constitution carries a manual `WORKSPACE_CRATES` list, so
-adding a workspace crate means adding it there — the `governance` gate fails
-until you do. Relaxing or removing a boundary follows the same discipline as a
-`Broker`-trait change: record why here before doing it.
+Operating rule: both boundaries govern *workspace* dependencies, whose
+membership `modou` derives from `cargo metadata` — so a newly added workspace
+crate is governed by default, with no hand-maintained crate list to update.
+Relaxing or removing a boundary follows the same discipline as a `Broker`-trait
+change: record why here before doing it.
 
 Rationale and rejected alternatives (per *Broker design gate* discipline of
 recording the "how else"):
@@ -239,10 +242,13 @@ recording the "how else"):
   (alongside `lint`/`deny`) and matches `modou`'s intended `check
   --manifest-path` usage; the test-embedded alternative was rejected as harder
   to invoke locally with a clear exit code.
-- **Why declared boundaries, not `forbid` of internal crates by allowlist** — an
-  explicit per-crate forbid list reads as the invariant it protects; an
-  external-only allowlist would not express "depends on nothing internal."
-- **Why dogfood `modou` (0.1.0)** — `worklane` is its first real consumer, which
+- **Why `restrict_workspace_dependencies_to`, not a hand-listed forbid** — the
+  closed workspace allowlist derives its members from `cargo metadata`, so a new
+  crate is forbidden by default until explicitly allowed. The earlier
+  hand-maintained forbid list (a `WORKSPACE_CRATES` array) inverted the safe
+  default: a crate never added to it was silently ungoverned. `modou` 0.2 made
+  the membership-derived rule available, so the migration removed the array.
+- **Why dogfood `modou` (0.2)** — `worklane` is its first real consumer, which
   is exactly the *least commitment* test (introduce the abstraction with its
   first consumer). Maturity risk is owned, not external.
 
