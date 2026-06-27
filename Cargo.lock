@@ -1005,9 +1005,9 @@ dependencies = [
 
 [[package]]
 name = "modou"
-version = "0.2.1"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d31db945f807c88042404a53e648527a03030994a71f31a9706c1596db524aa"
+checksum = "acf67ffa8b22675b1c6d41a69de8e51ddff901c633f42e19fa1546d4ef0a71eb"
 dependencies = [
  "serde_json",
 ]
