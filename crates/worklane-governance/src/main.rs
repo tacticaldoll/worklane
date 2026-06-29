@@ -2,7 +2,7 @@
 //!
 //! `AGENTS.md` states two load-bearing crate-graph invariants in prose — the
 //! portability of `worklane-core` (the Broker design gate) and the
-//! substitutability of the durable backends. This binary declares them as a
+//! substitutability of the brokers. This binary declares them as a
 //! `tianheng` [`Constitution`] so CI reacts when the graph drifts, instead of the
 //! rules living only as English a reviewer has to remember.
 //!
@@ -36,27 +36,30 @@ fn constitution() -> Constitution {
                      depend on any other workspace crate",
                 ),
         )
-        // Durable backends stay interchangeable only if none reaches into
-        // another backend or the facade — each may depend on worklane-core
-        // alone among workspace crates.
-        .boundary(backend_boundary("worklane-sqlite"))
-        .boundary(backend_boundary("worklane-postgres"))
-        .boundary(backend_boundary("worklane-redis"))
+        // Every broker stays interchangeable only if none reaches into another
+        // broker or the facade — each may depend on worklane-core alone among
+        // workspace crates. Substitutability is about passing the same
+        // conformance suite, not about durability, so the in-memory reference
+        // (worklane-memory) is governed identically to the durable backends.
+        .boundary(broker_boundary("worklane-memory"))
+        .boundary(broker_boundary("worklane-sqlite"))
+        .boundary(broker_boundary("worklane-postgres"))
+        .boundary(broker_boundary("worklane-redis"))
 }
 
-/// A durable backend may depend on only `worklane-core` among workspace crates.
+/// A broker may depend on only `worklane-core` among workspace crates.
 ///
 /// The rule governs normal `[dependencies]` only, so the dev-dependency on
 /// `worklane-test` — the conformance suite that *proves* substitutability — is
 /// allowed without being listed: it is the mechanism, not a breach. (AGENTS.md:
-/// backends are interchangeable when they pass the same behavioral conformance
+/// brokers are interchangeable when they pass the same behavioral conformance
 /// suite.)
-fn backend_boundary(backend: &str) -> CrateBoundary {
-    CrateBoundary::crate_(backend)
+fn broker_boundary(broker: &str) -> CrateBoundary {
+    CrateBoundary::crate_(broker)
         .restrict_workspace_dependencies_to(["worklane-core"])
         .because(
-            "durable backends must stay substitutable: depend only on \
-             worklane-core, never on another backend or the facade",
+            "brokers must stay substitutable: depend only on worklane-core, \
+             never on another broker or the facade",
         )
 }
 

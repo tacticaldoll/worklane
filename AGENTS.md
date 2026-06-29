@@ -218,11 +218,14 @@ Currently enforced (severity `enforce`, the default):
 - **worklane-core portability** — `worklane-core` must not depend on any other
   workspace crate. This is the *Broker design gate* and *Minimal contracts* made
   executable: the contract root stays backend-agnostic.
-- **Backend substitutability** — each durable backend (`worklane-sqlite`,
+- **Broker substitutability** — every broker (the in-memory reference
+  `worklane-memory` and the durable backends `worklane-sqlite`,
   `worklane-postgres`, `worklane-redis`) may depend on only `worklane-core` among
-  workspace crates, never on another backend or the facade. The rule scopes to
-  normal `[dependencies]`, so the dev-dependency on `worklane-test` (the
-  conformance suite that proves substitutability) is allowed without listing it.
+  workspace crates, never on another broker or the facade. Substitutability is
+  about passing the same conformance suite, not about durability, so the
+  in-memory reference is governed identically. The rule scopes to normal
+  `[dependencies]`, so the dev-dependency on `worklane-test` (the conformance
+  suite that proves substitutability) is allowed without listing it.
 
 Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate
