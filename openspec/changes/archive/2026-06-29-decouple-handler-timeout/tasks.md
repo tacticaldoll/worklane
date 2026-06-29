@@ -60,6 +60,6 @@
   `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all --check`, and
   `cargo run -p worklane-governance -- check --manifest-path Cargo.toml` all pass.
   (`cargo deny check` is CI-only — not installed locally.)
-- [ ] 4.2 Update `BACKLOG.md` with the ✓ shipped status after archiving (remove
+- [x] 4.2 Update `BACKLOG.md` with the ✓ shipped status after archiving (remove
   the "structural handler decoupling" Worker follow-up and its incorrect
   breaking-change rationale). — *archive phase*
