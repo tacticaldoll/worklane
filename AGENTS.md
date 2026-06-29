@@ -246,9 +246,9 @@ recording the "how else"):
   closed workspace allowlist derives its members from `cargo metadata`, so a new
   crate is forbidden by default until explicitly allowed. The earlier
   hand-maintained forbid list (a `WORKSPACE_CRATES` array) inverted the safe
-  default: a crate never added to it was silently ungoverned. `modou` 0.2 made
+  default: a crate never added to it was silently ungoverned. `modou` 0.1.1 made
   the membership-derived rule available, so the migration removed the array.
-- **Why dogfood `modou` (0.2)** — `worklane` is its first real consumer, which
+- **Why dogfood `modou` (0.1.1)** — `worklane` is its first real consumer, which
   is exactly the *least commitment* test (introduce the abstraction with its
   first consumer). Maturity risk is owned, not external.
 
