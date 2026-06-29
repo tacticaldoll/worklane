@@ -58,6 +58,10 @@ impl Clock for SystemClock {
 /// up. The floor is per-instance (a broker holds one `WallClock`), and resets on
 /// restart, where `SystemTime` is re-anchored anyway.
 ///
+/// This monotonicity is the *clock's* guarantee, not the broker's: a broker only
+/// compares `now()` against stored absolute deadlines, so the defense against a
+/// backward step belongs here, at the time source — no backend re-implements it.
+///
 /// Residual: a large **forward** step still moves the clock ahead (we must follow
 /// real time forward for durability), which can expire an in-flight lease early
 /// and redeliver its job. That is duplicate delivery, which the at-least-once
