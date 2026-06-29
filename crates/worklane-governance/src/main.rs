@@ -45,6 +45,22 @@ fn constitution() -> Constitution {
         .boundary(broker_boundary("worklane-sqlite"))
         .boundary(broker_boundary("worklane-postgres"))
         .boundary(broker_boundary("worklane-redis"))
+        // The shared conformance suite proves substitutability only because it
+        // asserts through the contract alone: it must depend on worklane-core
+        // and nothing else among workspace crates, with each backend supplying
+        // its adapter via a dev-dependency. A normal dependency on a concrete
+        // broker would make the suite backend-specific and void the proof.
+        // (AGENTS.md: Minimal contracts — assert only through the contract plus
+        // a per-implementation adapter.)
+        .boundary(
+            CrateBoundary::crate_("worklane-test")
+                .restrict_workspace_dependencies_to(["worklane-core"])
+                .because(
+                    "the conformance suite must assert only through the \
+                     contract: depend on worklane-core alone, never on a \
+                     concrete broker",
+                ),
+        )
 }
 
 /// A broker may depend on only `worklane-core` among workspace crates.

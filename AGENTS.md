@@ -226,6 +226,12 @@ Currently enforced (severity `enforce`, the default):
   in-memory reference is governed identically. The rule scopes to normal
   `[dependencies]`, so the dev-dependency on `worklane-test` (the conformance
   suite that proves substitutability) is allowed without listing it.
+- **Conformance-suite contract purity** — `worklane-test`, the shared broker
+  conformance suite, may depend on only `worklane-core` (the contract) among
+  workspace crates. It proves substitutability *because* it asserts through the
+  contract alone, each backend supplying its adapter via a dev-dependency; a
+  normal dependency on a concrete broker would make the suite backend-specific.
+  Same membership-derived rule, governing normal `[dependencies]`.
 
 Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate
