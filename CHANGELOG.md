@@ -7,6 +7,18 @@ changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- The worker's handler timeout now bounds a non-cooperative (non-yielding)
+  handler: the handler runs on its own task and the timeout races its
+  `JoinHandle`, so on a multi-thread runtime (given a free worker thread) a
+  CPU-bound or blocking handler that never `.await`s is failed/redelivered and
+  its concurrency slot freed, instead of holding the slot indefinitely.
+  Previously the timeout shared the handler's task and could not fire for such a
+  handler. The timeout still cannot *preempt* a non-yielding handler (the
+  orphaned task runs to its next yield); use `tokio::task::spawn_blocking` for
+  CPU-bound work. No public API change.
+
 ### Changed
 
 - `worklane-governance` (not published) now declares its constitution with
