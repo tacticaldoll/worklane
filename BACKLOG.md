@@ -348,10 +348,20 @@ see AGENTS.md). Scope is deliberately least-commitment; these are *candidate*
 boundaries, not yet justified by an invariant this repo asserts, so they are
 deferred rather than pre-built:
 
-- **Facade-direction rules** — assert that backends/leaf crates never depend on
-  the `worklane` facade, and that the dependency arrow only ever points toward
-  `worklane-core`. Today's graph already satisfies this; encode it as boundaries
-  only once a near-miss makes the invariant worth enforcing.
+- **Facade-direction rules** — assert that the dependency arrow points toward
+  `worklane-core` and that nothing depends on the `worklane` facade. Deferred for
+  two reasons, not one. (1) The load-bearing part is already enforced:
+  `worklane-core` forbids all workspace deps, and every broker plus
+  `worklane-test` is restricted to `worklane-core`, so none of them can reach the
+  facade. (2) The residual is an *incoming* (reverse-dependency) invariant, but
+  `tianheng` 0.1.0 has only outgoing crate rules; it could be expressed only by
+  hand-listing a `forbid_dependency_on(["worklane"])` per crate, which inverts the
+  safe default — a new crate would be ungoverned — the very anti-pattern the
+  membership-derived rules exist to avoid. And `worklane-pubsub` depends on the
+  facade on purpose (a layer above the public API), so the naive "nothing depends
+  on the facade" form is already false. Revisit only if `tianheng` gains a
+  reverse-dependency rule and a concrete invariant names which crates may sit
+  above the facade.
 - **Intra-crate module layering** — `tianheng`'s `ModuleBoundary` can forbid
   `use` edges Cargo cannot see (e.g. envelope/model code importing broker
   internals inside `worklane-core`). Deferred until a concrete layering invariant
