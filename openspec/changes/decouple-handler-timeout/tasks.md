@@ -43,7 +43,7 @@
 
 ## 3. Spec sync and docs
 
-- [ ] 3.1 Sync the `worker` delta into `openspec/specs/worker/spec.md` (the
+- [x] 3.1 Sync the `worker` delta into `openspec/specs/worker/spec.md` (the
   modified **Bounded long-handler support** requirement and its scenarios). —
   *sync phase*
 - [x] 3.2 Update `docs/known-limitations.md`: the timeout now fires for a
