@@ -16,6 +16,13 @@ changes.
   drop-in: the two enforced crate-graph boundaries and the `check` CLI contract
   are unchanged. No consumer-facing effect.
 
+### Documentation
+
+- `docs/lifecycle-semantics.md` now has a *Leases and Stale Resolution* section
+  documenting the reservation lease, the current-receipt requirement, expired
+  and superseded receipts rejected as `StaleReservation`, forward-clock-jump
+  redelivery, and that redelivery order is implementation-defined.
+
 ## [0.2.0]
 
 A substantial pre-1.0 release. The `Broker` contract is reshaped into an
