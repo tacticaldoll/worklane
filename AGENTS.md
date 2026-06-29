@@ -237,6 +237,12 @@ Currently enforced (severity `enforce`, the default):
   gate that imported the crates it judges would entangle its verdict with its
   subject and could be broken by a change to the very graph it scores. This
   makes the `rust.yml` "dependency-free" gate property executable.
+- **Facade broker-agnosticism** — `worklane`, the facade (worker, client,
+  workflow over the contract), may depend on only `worklane-core` among
+  workspace crates. The architecture is bring-your-own-broker: users compose a
+  broker crate separately, so the public surface must not pull a concrete broker
+  (or any other workspace crate) in. This is a self-bounding line — the facade
+  not overstepping its own edges — not a route imposed on others.
 
 Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate

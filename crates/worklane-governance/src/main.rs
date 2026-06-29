@@ -74,6 +74,19 @@ fn constitution() -> Constitution {
                      judges: depend only on tianheng, never on a workspace crate",
                 ),
         )
+        // The facade is the thin public surface over the contract (worker,
+        // client, workflow built on worklane-core). It stays broker-agnostic —
+        // bring your own broker — so it must not pull a broker (or any other
+        // workspace crate) in: depend on worklane-core alone among workspace
+        // crates. Users compose a broker crate separately. (AGENTS.md: layout.)
+        .boundary(
+            CrateBoundary::crate_("worklane")
+                .restrict_workspace_dependencies_to(["worklane-core"])
+                .because(
+                    "the facade stays broker-agnostic and thin: depend only on \
+                     worklane-core among workspace crates; bring your own broker",
+                ),
+        )
 }
 
 /// A broker may depend on only `worklane-core` among workspace crates.
