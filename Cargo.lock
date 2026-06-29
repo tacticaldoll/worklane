@@ -658,6 +658,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "guibiao"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84f5d3d6e6561f988700d7883728cdc957eb644315d678064ac198a832639212"
+dependencies = [
+ "serde_json",
+ "xuanji",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -709,6 +719,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
 dependencies = [
  "digest",
+]
+
+[[package]]
+name = "hunyi"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bdeb08163e6b753368bf6f377f0ac3cb2d8d7081b6521f60c70ad34b4a49c0e"
+dependencies = [
+ "serde_json",
+ "syn",
+ "xuanji",
 ]
 
 [[package]]
@@ -947,6 +968,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
+name = "louke"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06ec293650681a178bafff7592862057ea7b3f2e8efc6224a9cef9972d57c5e8"
+dependencies = [
+ "xuanji",
+]
+
+[[package]]
 name = "md-5"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1001,15 +1031,6 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "modou"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "acf67ffa8b22675b1c6d41a69de8e51ddff901c633f42e19fa1546d4ef0a71eb"
-dependencies = [
- "serde_json",
 ]
 
 [[package]]
@@ -1858,6 +1879,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tianheng"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06c88cda2fd6c122387375f3ced8a5793d791dd2c4e724a0263f15694f8a4a2"
+dependencies = [
+ "guibiao",
+ "hunyi",
+ "louke",
+ "serde_json",
+]
+
+[[package]]
 name = "tinystr"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2566,7 +2599,7 @@ dependencies = [
 name = "worklane-governance"
 version = "0.2.0"
 dependencies = [
- "modou",
+ "tianheng",
 ]
 
 [[package]]
@@ -2694,6 +2727,15 @@ dependencies = [
  "der",
  "spki",
  "tls_codec",
+]
+
+[[package]]
+name = "xuanji"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54f3caa9d6a7b9db8f0dbe3abb5e7937a9ea5bdf8ddfddb77dde211b2891a8eb"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

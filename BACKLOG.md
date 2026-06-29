@@ -343,8 +343,8 @@ High-level patterns built at the client/application layer on the opaque
 ### Governance / boundary enforcement
 
 `crates/worklane-governance` makes the crate-graph invariants executable via a
-`modou` constitution (worklane-core portability, backend substitutability — see
-AGENTS.md). Scope is deliberately least-commitment; these are *candidate*
+`tianheng` constitution (worklane-core portability, backend substitutability —
+see AGENTS.md). Scope is deliberately least-commitment; these are *candidate*
 boundaries, not yet justified by an invariant this repo asserts, so they are
 deferred rather than pre-built:
 
@@ -352,14 +352,20 @@ deferred rather than pre-built:
   the `worklane` facade, and that the dependency arrow only ever points toward
   `worklane-core`. Today's graph already satisfies this; encode it as boundaries
   only once a near-miss makes the invariant worth enforcing.
-- **Intra-crate module layering** — `modou`'s `ModuleBoundary` can forbid `use`
-  edges Cargo cannot see (e.g. envelope/model code importing broker internals
-  inside `worklane-core`). Deferred until a concrete layering invariant exists to
-  protect — adding one now would be inventing policy, not recording it.
-- **Severity tiers / baseline** — `modou` supports advisory (`warn`) boundaries
-  and a baseline file to ratchet down existing violations. Unused while every
-  declared boundary is clean at `enforce`; reach for it only when introducing a
-  boundary the tree does not yet satisfy.
+- **Intra-crate module layering** — `tianheng`'s `ModuleBoundary` can forbid
+  `use` edges Cargo cannot see (e.g. envelope/model code importing broker
+  internals inside `worklane-core`). Deferred until a concrete layering invariant
+  exists to protect — adding one now would be inventing policy, not recording it.
+- **Severity tiers / baseline** — `tianheng` supports advisory (`warn`)
+  boundaries and a baseline file to ratchet down existing violations. Unused
+  while every declared boundary is clean at `enforce`; reach for it only when
+  introducing a boundary the tree does not yet satisfy.
+- **Semantic / runtime dimensions** — `tianheng` adds observation dimensions
+  `modou` lacked: semantic (渾儀 / `hunyi`: signature coupling, trait-impl
+  locality, visibility) and runtime (漏刻 / `louke`: concrete-type origins
+  crossing a seam). `worklane` declares only the static crate-graph dimension
+  today; reach for these only once a concrete invariant of that kind exists to
+  protect, not because the affordance is now available.
 
 ## Guiding principle
 

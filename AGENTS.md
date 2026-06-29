@@ -205,7 +205,7 @@ load-bearing abstraction; protect its portability.
 ## Boundary enforcement (executable governance)
 
 The crate-graph invariants above are no longer prose alone. `crates/worklane-governance`
-declares them as a [`modou`](https://crates.io/crates/modou) `Constitution` and a
+declares them as a [`tianheng`](https://crates.io/crates/tianheng) `Constitution` and a
 CI job (`governance` in `.github/workflows/rust.yml`) reacts when the graph
 drifts. Run it locally with:
 
@@ -228,8 +228,21 @@ Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate
 module layering) are deferred in `BACKLOG.md`, not pre-built.
 
+This gate governs one of two independent axes. `tianheng` reacts to
+**architectural-boundary drift** — the spatial shape of the crate-graph and the
+module-import graph: what may depend on, import, expose, or implement what.
+**Public-API compatibility drift** — whether a public type may evolve without
+breaking callers, including the `#[non_exhaustive]` discipline under *API
+stability and evolution* above — is a *different kind* of invariant on a
+separate axis (evolution over time, not spatial containment), with its own
+observation source. It is **not** in `tianheng`'s scope, and its absence there
+is not a gap to fill: attribute and semver policy belong to a semver-diff
+reaction (e.g. `cargo-semver-checks`), kept as its own gate if and when that
+axis is made reactive. Today it is held by the API-stability rules above plus
+human review; do not push it into the architectural constitution.
+
 Operating rule: both boundaries govern *workspace* dependencies, whose
-membership `modou` derives from `cargo metadata` — so a newly added workspace
+membership `tianheng` derives from `cargo metadata` — so a newly added workspace
 crate is governed by default, with no hand-maintained crate list to update.
 Relaxing or removing a boundary follows the same discipline as a `Broker`-trait
 change: record why here before doing it.
@@ -239,18 +252,25 @@ recording the "how else"):
 
 - **Why a binary + CI job, not a `#[test]`** — keeping enforcement out of
   `cargo test` lets the rules run as their own fast, dependency-free gate
-  (alongside `lint`/`deny`) and matches `modou`'s intended `check
+  (alongside `lint`/`deny`) and matches `tianheng`'s intended `check
   --manifest-path` usage; the test-embedded alternative was rejected as harder
   to invoke locally with a clear exit code.
 - **Why `restrict_workspace_dependencies_to`, not a hand-listed forbid** — the
   closed workspace allowlist derives its members from `cargo metadata`, so a new
   crate is forbidden by default until explicitly allowed. The earlier
   hand-maintained forbid list (a `WORKSPACE_CRATES` array) inverted the safe
-  default: a crate never added to it was silently ungoverned. `modou` 0.2 made
-  the membership-derived rule available, so the migration removed the array.
-- **Why dogfood `modou` (0.2)** — `worklane` is its first real consumer, which
-  is exactly the *least commitment* test (introduce the abstraction with its
-  first consumer). Maturity risk is owned, not external.
+  default: a crate never added to it was silently ungoverned. `tianheng`'s
+  static dimension (圭表 / `guibiao`) carries the membership-derived rule, so
+  the migration removed the array.
+- **Why `tianheng`, the successor to `modou`** — `worklane` was `modou`'s first
+  real consumer (the *least commitment* test: introduce the abstraction with its
+  first consumer). `modou` has since evolved into the `tianheng` constellation,
+  which decomposes the engine into static (圭表 / `guibiao`), semantic
+  (渾儀 / `hunyi`), and runtime (漏刻 / `louke`) observation dimensions behind one
+  `Constitution` + `run` shell. `worklane` tracks that evolution; the swap was a
+  drop-in because `tianheng` re-exports the same `Constitution` / `CrateBoundary`
+  / `run` surface, and `worklane` still declares only the static crate-graph
+  dimension. Maturity risk is owned, not external.
 
 This is process/discipline knowledge, so it lives here and not in
 `openspec/specs/` — it changes no job-lifecycle behavior and carries no delta
