@@ -349,24 +349,30 @@ boundaries, not yet justified by an invariant this repo asserts, so they are
 deferred rather than pre-built:
 
 - **Facade inbound-rule (module-level)** — the well-shaped guard for a facade is
-  a *closed inbound allowlist* on the protected module: "only `crate::facade`
-  may import `crate::internal`" (a `must_not_be_imported_by`-style rule). Three
-  things make it admissible and non-cosmetic. (1) *Closure* — the gap is real:
-  forbidding the import one-other-module-at-a-time is open and silently fails to
-  govern modules added later; only a closed inbound rule keeps the "a newly-added
-  thing is governed without a constitution edit" property the membership-derived
-  rules already rely on. (2) *Not rustc-redundant* — `pub(in crate::facade)`
-  restricts to an ancestor path only, so it cannot say "visible to a sibling
-  facade, private to a sibling consumer"; when the facade is not an ancestor of
-  the internal module the routing intent is unexpressible in Rust visibility — so
-  this is declared intent the compiler cannot close, not duplication. (3) *Not a
-  universal-graph query* — it stays a per-target declared boundary (name the
-  protected module and its allowed importers). Born when built: defer until a
-  concrete facade someone could reach past exists — an adopter's, or `tianheng`'s
-  own (`guibiao` re-exporting `xuanji` is a candidate) — not because a capability
-  matrix looks asymmetric. (The earlier *crate*-level reverse-dependency framing
-  is the weaker sibling: `worklane-pubsub` depends on the `worklane` facade on
-  purpose, so "nothing depends on the facade crate" is already false.)
+  a *closed inbound allowlist* on the protected module: "only `crate::facade` may
+  import `crate::internal`". `tianheng` 0.1.0 ships the *forbid-one* inbound rule
+  (`ModuleBoundary…must_not_be_imported_by(importer)`) but not this closed
+  allowlist (`must_only_be_imported_by`), and that gap is the point: forbid-one is
+  an open set — you can name who is banned, never "everyone except the facade" —
+  and aiming it at the crate root is even a deliberate constitution error, so it
+  cannot subtract the facade out. Three things make the closed form admissible and
+  non-cosmetic. (1) *Closure* — only an allowlist governs modules added later
+  without a constitution edit, the property the membership-derived rules already
+  rely on. (2) *Not rustc-redundant* — `pub(in crate::facade)` restricts to an
+  ancestor path only, so "visible to a sibling facade, private to a sibling
+  consumer" is unexpressible in Rust visibility: declared intent the compiler
+  cannot close. (3) *Not a universal-graph query* — it stays a per-target declared
+  boundary. But the closed allowlist is a more *prescriptive* shape than
+  `tianheng`'s grain: its rules are self-bounding ("don't overstep your own
+  edges") or forbid-one prohibitions, whereas "everyone funnels through the
+  facade" bounds the whole world's relation to a protected centre. So the bar is
+  higher than feasibility — build it only when a concrete facade someone could
+  reach past exists *and* its protection is worth a prescriptive rule (an
+  adopter's, or `tianheng`'s own `guibiao` re-exporting `xuanji`); prefer the
+  prohibitive `must_not_be_imported_by` for a named bad importer whenever that
+  suffices. (The *crate*-level reverse-dependency framing is the weaker sibling:
+  `worklane-pubsub` depends on the `worklane` facade on purpose, so "nothing
+  depends on the facade crate" is already false.)
 - **Broker-trait cardinality / locality — considered, declined.** Pinning the
   `Broker` trait to "at most one impl" (or a stricter usage/construction-site
   locality) clears the literal gate but fails its spirit: locality is already
