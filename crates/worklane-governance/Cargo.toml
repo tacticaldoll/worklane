@@ -1,6 +1,6 @@
 [package]
 name = "worklane-governance"
-description = "Executable architectural governance for the worklane workspace (modou constitution)."
+description = "Executable architectural governance for the worklane workspace (tianheng constitution)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,4 +16,4 @@ name = "worklane-governance"
 path = "src/main.rs"
 
 [dependencies]
-modou = "0.1.1"
+tianheng = "0.1.0"

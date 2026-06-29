@@ -3,22 +3,22 @@
 //! `AGENTS.md` states two load-bearing crate-graph invariants in prose — the
 //! portability of `worklane-core` (the Broker design gate) and the
 //! substitutability of the durable backends. This binary declares them as a
-//! `modou` [`Constitution`] so CI reacts when the graph drifts, instead of the
+//! `tianheng` [`Constitution`] so CI reacts when the graph drifts, instead of the
 //! rules living only as English a reviewer has to remember.
 //!
 //! ```text
 //! cargo run -p worklane-governance -- check
 //! ```
 //!
-//! Exit codes come from `modou`: `0` clean, `1` an enforced boundary was
+//! Exit codes come from `tianheng`: `0` clean, `1` an enforced boundary was
 //! breached, `2` a configuration error.
 
-use modou::prelude::*;
 use std::process::ExitCode;
+use tianheng::prelude::*;
 
 /// The worklane workspace constitution.
 ///
-/// Both boundaries govern *workspace* dependencies, whose membership `modou`
+/// Both boundaries govern *workspace* dependencies, whose membership `tianheng`
 /// derives from `cargo metadata`. A newly added workspace crate is therefore
 /// governed by default — there is no hand-maintained crate list to forget to
 /// update.
@@ -61,5 +61,5 @@ fn backend_boundary(backend: &str) -> CrateBoundary {
 }
 
 fn main() -> ExitCode {
-    modou::run(&constitution(), std::env::args())
+    tianheng::run(&constitution(), std::env::args())
 }
