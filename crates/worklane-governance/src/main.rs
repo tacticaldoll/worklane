@@ -61,6 +61,19 @@ fn constitution() -> Constitution {
                      concrete broker",
                 ),
         )
+        // The gate must stay independent of the graph it judges: a governor
+        // that imported the crates it scores would entangle its verdict with
+        // its subject, and a change to the governed graph could break the gate
+        // itself. It depends only on tianheng (external), never on a workspace
+        // crate. (rust.yml: a dependency-free gate.)
+        .boundary(
+            CrateBoundary::crate_("worklane-governance")
+                .forbid_all_workspace_dependencies()
+                .because(
+                    "the governance gate must stay independent of the graph it \
+                     judges: depend only on tianheng, never on a workspace crate",
+                ),
+        )
 }
 
 /// A broker may depend on only `worklane-core` among workspace crates.

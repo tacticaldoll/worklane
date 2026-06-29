@@ -232,6 +232,11 @@ Currently enforced (severity `enforce`, the default):
   contract alone, each backend supplying its adapter via a dev-dependency; a
   normal dependency on a concrete broker would make the suite backend-specific.
   Same membership-derived rule, governing normal `[dependencies]`.
+- **Governor independence** — `worklane-governance`, the gate itself, must not
+  depend on any workspace crate (it depends only on `tianheng`, external). A
+  gate that imported the crates it judges would entangle its verdict with its
+  subject and could be broken by a change to the very graph it scores. This
+  makes the `rust.yml` "dependency-free" gate property executable.
 
 Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate
