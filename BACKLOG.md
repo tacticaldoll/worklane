@@ -348,20 +348,35 @@ see AGENTS.md). Scope is deliberately least-commitment; these are *candidate*
 boundaries, not yet justified by an invariant this repo asserts, so they are
 deferred rather than pre-built:
 
-- **Facade-direction rules** — assert that the dependency arrow points toward
-  `worklane-core` and that nothing depends on the `worklane` facade. Deferred for
-  two reasons, not one. (1) The load-bearing part is already enforced:
-  `worklane-core` forbids all workspace deps, and every broker plus
-  `worklane-test` is restricted to `worklane-core`, so none of them can reach the
-  facade. (2) The residual is an *incoming* (reverse-dependency) invariant, but
-  `tianheng` 0.1.0 has only outgoing crate rules; it could be expressed only by
-  hand-listing a `forbid_dependency_on(["worklane"])` per crate, which inverts the
-  safe default — a new crate would be ungoverned — the very anti-pattern the
-  membership-derived rules exist to avoid. And `worklane-pubsub` depends on the
-  facade on purpose (a layer above the public API), so the naive "nothing depends
-  on the facade" form is already false. Revisit only if `tianheng` gains a
-  reverse-dependency rule and a concrete invariant names which crates may sit
-  above the facade.
+- **Facade inbound-rule (module-level)** — the well-shaped guard for a facade is
+  a *closed inbound allowlist* on the protected module: "only `crate::facade`
+  may import `crate::internal`" (a `must_not_be_imported_by`-style rule). Three
+  things make it admissible and non-cosmetic. (1) *Closure* — the gap is real:
+  forbidding the import one-other-module-at-a-time is open and silently fails to
+  govern modules added later; only a closed inbound rule keeps the "a newly-added
+  thing is governed without a constitution edit" property the membership-derived
+  rules already rely on. (2) *Not rustc-redundant* — `pub(in crate::facade)`
+  restricts to an ancestor path only, so it cannot say "visible to a sibling
+  facade, private to a sibling consumer"; when the facade is not an ancestor of
+  the internal module the routing intent is unexpressible in Rust visibility — so
+  this is declared intent the compiler cannot close, not duplication. (3) *Not a
+  universal-graph query* — it stays a per-target declared boundary (name the
+  protected module and its allowed importers). Born when built: defer until a
+  concrete facade someone could reach past exists — an adopter's, or `tianheng`'s
+  own (`guibiao` re-exporting `xuanji` is a candidate) — not because a capability
+  matrix looks asymmetric. (The earlier *crate*-level reverse-dependency framing
+  is the weaker sibling: `worklane-pubsub` depends on the `worklane` facade on
+  purpose, so "nothing depends on the facade crate" is already false.)
+- **Broker-trait cardinality / locality — considered, declined.** Pinning the
+  `Broker` trait to "at most one impl" (or a stricter usage/construction-site
+  locality) clears the literal gate but fails its spirit: locality is already
+  held by `only_implemented_in` plus the crate-dependency boundaries, so
+  cardinality only adds a weakly-architectural "don't write a second impl" — the
+  lint shape this project forbids. The usage-site reading has a pervasive
+  observation surface (a false-negative engine); the construction-site reading
+  of `dyn Broker` is invisible to static analysis (it is 漏刻 / `louke`
+  runtime-origin territory, the wrong observation source). A hole in the matrix
+  is a question, not a mandate.
 - **Intra-crate module layering** — `tianheng`'s `ModuleBoundary` can forbid
   `use` edges Cargo cannot see (e.g. envelope/model code importing broker
   internals inside `worklane-core`). Deferred until a concrete layering invariant
