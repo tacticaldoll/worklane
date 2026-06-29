@@ -348,10 +348,41 @@ see AGENTS.md). Scope is deliberately least-commitment; these are *candidate*
 boundaries, not yet justified by an invariant this repo asserts, so they are
 deferred rather than pre-built:
 
-- **Facade-direction rules** — assert that backends/leaf crates never depend on
-  the `worklane` facade, and that the dependency arrow only ever points toward
-  `worklane-core`. Today's graph already satisfies this; encode it as boundaries
-  only once a near-miss makes the invariant worth enforcing.
+- **Facade inbound-rule (module-level)** — the well-shaped guard for a facade is
+  a *closed inbound allowlist* on the protected module: "only `crate::facade` may
+  import `crate::internal`". `tianheng` 0.1.0 ships the *forbid-one* inbound rule
+  (`ModuleBoundary…must_not_be_imported_by(importer)`) but not this closed
+  allowlist (`must_only_be_imported_by`), and that gap is the point: forbid-one is
+  an open set — you can name who is banned, never "everyone except the facade" —
+  and aiming it at the crate root is even a deliberate constitution error, so it
+  cannot subtract the facade out. Three things make the closed form admissible and
+  non-cosmetic. (1) *Closure* — only an allowlist governs modules added later
+  without a constitution edit, the property the membership-derived rules already
+  rely on. (2) *Not rustc-redundant* — `pub(in crate::facade)` restricts to an
+  ancestor path only, so "visible to a sibling facade, private to a sibling
+  consumer" is unexpressible in Rust visibility: declared intent the compiler
+  cannot close. (3) *Not a universal-graph query* — it stays a per-target declared
+  boundary. But the closed allowlist is a more *prescriptive* shape than
+  `tianheng`'s grain: its rules are self-bounding ("don't overstep your own
+  edges") or forbid-one prohibitions, whereas "everyone funnels through the
+  facade" bounds the whole world's relation to a protected centre. So the bar is
+  higher than feasibility — build it only when a concrete facade someone could
+  reach past exists *and* its protection is worth a prescriptive rule (an
+  adopter's, or `tianheng`'s own `guibiao` re-exporting `xuanji`); prefer the
+  prohibitive `must_not_be_imported_by` for a named bad importer whenever that
+  suffices. (The *crate*-level reverse-dependency framing is the weaker sibling:
+  `worklane-pubsub` depends on the `worklane` facade on purpose, so "nothing
+  depends on the facade crate" is already false.)
+- **Broker-trait cardinality / locality — considered, declined.** Pinning the
+  `Broker` trait to "at most one impl" (or a stricter usage/construction-site
+  locality) clears the literal gate but fails its spirit: locality is already
+  held by `only_implemented_in` plus the crate-dependency boundaries, so
+  cardinality only adds a weakly-architectural "don't write a second impl" — the
+  lint shape this project forbids. The usage-site reading has a pervasive
+  observation surface (a false-negative engine); the construction-site reading
+  of `dyn Broker` is invisible to static analysis (it is 漏刻 / `louke`
+  runtime-origin territory, the wrong observation source). A hole in the matrix
+  is a question, not a mandate.
 - **Intra-crate module layering** — `tianheng`'s `ModuleBoundary` can forbid
   `use` edges Cargo cannot see (e.g. envelope/model code importing broker
   internals inside `worklane-core`). Deferred until a concrete layering invariant
