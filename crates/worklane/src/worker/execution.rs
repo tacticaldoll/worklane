@@ -38,18 +38,18 @@ use worklane_core::RetryPolicy;
 
 use super::{Dispatch, JobAttemptEvent, JobEvent, JobOutcome};
 
-/// Aborts the wrapped task when dropped. The heartbeat in `run_maintained` runs
-/// on a detached `tokio::spawn`ed task, so it is *not* a child of the `process`
-/// future: if that future is hard-cancelled (dropped mid-job, e.g. the operator
-/// drops `run` instead of resolving its shutdown signal), the normal
-/// fall-through `abort()` never executes and the orphaned heartbeat would keep
-/// extending the lease — suppressing the at-least-once redelivery the worker
-/// promises for an abandoned job. Tying the handle's lifetime to this guard
-/// restores the inline-`select!` semantics: a dropped `run_maintained` tears the
-/// heartbeat down too.
-struct AbortOnDrop(tokio::task::JoinHandle<()>);
+/// Aborts the wrapped task when dropped. `run_maintained` runs both the heartbeat
+/// and the handler on detached `tokio::spawn`ed tasks, so neither is a child of
+/// the `process` future: if that future is hard-cancelled (dropped mid-job, e.g.
+/// the operator drops `run` instead of resolving its shutdown signal), the normal
+/// fall-through `abort()` never executes — an orphaned heartbeat would keep
+/// extending the lease (suppressing the at-least-once redelivery the worker
+/// promises for an abandoned job) and an orphaned handler would keep running
+/// detached. Tying each handle's lifetime to this guard restores the inline
+/// semantics: a dropped `run_maintained` tears both down.
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
 
-impl Drop for AbortOnDrop {
+impl<T> Drop for AbortOnDrop<T> {
     fn drop(&mut self) {
         self.0.abort();
     }
@@ -171,26 +171,27 @@ impl ProcessCtx {
         };
 
         tracing::info!(job_id = %id, kind = %envelope.kind, attempt = envelope.attempts.saturating_add(1), "dispatching job");
-        // Run the middleware chain (outermost first), terminating at the handler.
-        // With no middleware configured this is just the handler call.
-        let chain = super::Next::new(&self.middleware, dispatch.as_ref());
-        // Contain a panic that unwinds out of the handler (or a middleware): catch
-        // it and surface it as a handler error, so it flows through the normal
-        // failure path (retry / dead-letter) instead of crashing the worker and
-        // abandoning sibling in-flight jobs. `AssertUnwindSafe` is sound here
-        // because a panicking job is discarded, never resumed, so no state leaks.
-        let handler = AssertUnwindSafe(chain.run(ctx, payload.as_ref()))
-            .catch_unwind()
-            .map(|caught| match caught {
-                Ok(result) => result,
-                Err(payload) => Err(Error::Handler(panic_message(payload))),
-            });
         // Maintain the lease (heartbeat) while the handler runs when either a
         // handler timeout or lease keepalive is configured; the timeout, if set,
         // also bounds a stuck handler. With neither, behave exactly as before:
-        // just run the handler with no heartbeat, relying on lease expiry and
-        // at-least-once redelivery.
+        // just run the handler inline with no heartbeat, relying on lease expiry
+        // and at-least-once redelivery.
         let outcome = if self.handler_timeout.is_some() || self.lease_keepalive {
+            // Maintained path: the handler runs on its OWN task (in
+            // `run_maintained`) so the timeout fires independently of whether the
+            // handler yields. Build an owned, `'static` handler future it can
+            // spawn: it owns the middleware `Arc`s, the dispatch `Arc`, the
+            // context, and the payload, and runs the existing borrowing `Next`
+            // chain over those owned locals internally — so the public `Next`
+            // type is untouched. A panic on the spawned task surfaces as a
+            // `JoinError` (handled in `run_maintained`), not via `catch_unwind`.
+            let middleware = self.middleware.clone();
+            let payload = payload.into_owned();
+            let handler = async move {
+                super::Next::new(&middleware, dispatch.as_ref())
+                    .run(ctx, &payload)
+                    .await
+            };
             self.run_maintained(
                 handler,
                 receipt,
@@ -201,6 +202,19 @@ impl ProcessCtx {
             )
             .await
         } else {
+            // Default path: run the handler inline (it need not be `Send`).
+            // Contain a panic that unwinds out of the handler (or a middleware):
+            // catch it and surface it as a handler error, so it flows through the
+            // normal failure path instead of crashing the worker and abandoning
+            // sibling in-flight jobs. `AssertUnwindSafe` is sound here because a
+            // panicking job is discarded, never resumed, so no state leaks.
+            let chain = super::Next::new(&self.middleware, dispatch.as_ref());
+            let handler = AssertUnwindSafe(chain.run(ctx, payload.as_ref()))
+                .catch_unwind()
+                .map(|caught| match caught {
+                    Ok(result) => result,
+                    Err(p) => Err(Error::Handler(panic_message(p))),
+                });
             HandlerOutcome::Completed(handler.await)
         };
 
@@ -358,9 +372,8 @@ impl ProcessCtx {
         cancellation: &Cancellation,
     ) -> HandlerOutcome
     where
-        F: Future<Output = Result<Vec<u8>>>,
+        F: Future<Output = Result<Vec<u8>>> + Send + 'static,
     {
-        tokio::pin!(handler);
         let heartbeat_every = (lease / 3).max(Duration::from_millis(50));
 
         // Heartbeat on its OWN task so lease extension ticks independently of how
@@ -397,9 +410,16 @@ impl ProcessCtx {
             }
         }));
 
-        // The handler runs on THIS task (so it needn't be `Send`). A `Some`
-        // timeout races it via the deadline arm; a `None` keepalive leaves the
+        // The handler runs on its OWN task so the timeout below advances
+        // independently of whether the handler yields — given a free worker
+        // thread (if non-yielding handlers saturate every worker thread, or on a
+        // current-thread runtime, the timeout still cannot be polled until one
+        // frees; `spawn_blocking` is the real bound for blocking work).
+        // `AbortOnDrop` ties the task to this scope: a timeout, or a dropped
+        // `run_maintained`, aborts it rather than detaching it. A `Some` timeout
+        // races the handler via the deadline arm; a `None` keepalive leaves the
         // deadline permanently pending.
+        let mut handler_task = AbortOnDrop(tokio::spawn(handler));
         let deadline = async {
             match timeout {
                 Some(t) => tokio::time::sleep(t).await,
@@ -409,19 +429,36 @@ impl ProcessCtx {
         tokio::pin!(deadline);
         let outcome = tokio::select! {
             biased;
-            res = &mut handler => HandlerOutcome::Completed(res),
+            joined = &mut handler_task.0 => match joined {
+                Ok(res) => HandlerOutcome::Completed(res),
+                // A panic on the handler task is contained by the runtime and
+                // surfaces here as a `JoinError`; route it through the normal
+                // failure path, exactly as the inline `catch_unwind` path does.
+                Err(err) if err.is_panic() => {
+                    HandlerOutcome::Completed(Err(Error::Handler(panic_message(err.into_panic()))))
+                }
+                // The only abort we issue is on the deadline arm below, so a
+                // cancelled join here is unexpected; surface it as a handler
+                // error rather than panicking the worker.
+                Err(_) => HandlerOutcome::Completed(Err(Error::Handler(
+                    "handler task ended without a result".to_string(),
+                ))),
+            },
             _ = &mut deadline => {
-                // Timed out: the handler future is dropped on return (cancelled at
-                // its next await); signal the flag for cooperative handlers too.
+                // Timed out: signal cooperative cancellation; dropping
+                // `handler_task` below aborts the handler task. It stops at its
+                // next yield point — a non-yielding handler keeps running until
+                // it yields, but its slot is freed and the job is resolved.
                 cancellation.cancel();
                 HandlerOutcome::TimedOut(timeout.unwrap_or_default())
             }
         };
-        // Handler resolved (or timed out): stop heartbeating. Dropping the guard
-        // aborts the task here on the normal path; the `AbortOnDrop` wrapper also
-        // covers the cancellation path where this future is dropped before we get
-        // here. An extend already in flight is harmless — it is stale-rejected
-        // once the job is ack'd/failed.
+        // Handler resolved (or timed out): stop the handler task and the
+        // heartbeat. Dropping each guard aborts its task; the `AbortOnDrop`
+        // wrapper also covers the hard-cancel path where this future is dropped
+        // before we reach here. An extend already in flight is harmless — it is
+        // stale-rejected once the job is ack'd/failed.
+        drop(handler_task);
         drop(heartbeat);
         outcome
     }

@@ -53,10 +53,11 @@ backlog item that wrongly deferred it as a breaking change.
 
 - **Code**: `crates/worklane/src/worker/execution.rs` (`run_maintained` /
   `process`) — handler spawned on its own task, timeout races the `JoinHandle`,
-  abort on timeout. The internal middleware chain (`Next`, `pub(super)`) is
-  refactored to own its `Arc`s so the handler future is `'static`. No change to
-  the `worker/mod.rs` reserve loop's per-job spawn, the heartbeat task, or the
-  public `Worker` / `Job` API.
+  abort on timeout. An owned `async` wrapper makes the handler future `'static`
+  (it moves in the cloned middleware/dispatch `Arc`s and the payload and runs the
+  existing `Next` over them), so the **public `Next` type is unchanged**. No
+  change to the `worker/mod.rs` reserve loop's per-job spawn, the heartbeat task,
+  or the public `Worker` / `Job` API.
 - **Behavior**: observable change — a non-yielding handler with a configured
   timeout is now failed/redelivered and its slot freed (previously: wedged
   indefinitely). Cooperative handlers and the default (no-timeout) path are

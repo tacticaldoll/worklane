@@ -46,11 +46,14 @@ timeout, abort the handler `JoinHandle` (signalling cooperative `Cancellation`
 too) and return `TimedOut`; on completion, return the handler's result.
 - *Making the handler future `'static`*: the current handler is
   `Next::new(&self.middleware, dispatch.as_ref())` — the middleware chain
-  **borrows** `self.middleware` and the `&dyn Dispatch`. Spawning it requires
-  refactoring `Next` (an internal `pub(super)` type) to **own** its `Arc`s, and
-  owning the payload (`Cow::Owned`). This is an internal change, no public-API or
-  bound impact (confirm during apply that `Next` has no external callers needing
-  the borrowed form).
+  **borrows** `self.middleware` and the `&dyn Dispatch`. `Next` is **`pub`** (it
+  appears in the public `Middleware::handle` signature), so refactoring it to own
+  its `Arc`s would itself be **breaking**. Instead, spawn an **owned async
+  wrapper**: an `async move` block that takes the cloned middleware `Arc`s, the
+  dispatch `Arc`, the context, and the owned payload (`Cow::into_owned`) and runs
+  the existing borrowing `Next` over those owned locals internally. The wrapper
+  is `Send + 'static`; `Next` is untouched — that is what keeps the change
+  non-breaking. (Verified during apply.)
 - *Alternative rejected*: `tokio::time::timeout(d, handler)` — identical to the
   current inline `select!`; same-task, cannot fire for a non-yielding handler.
 - *Panic isolation*: a handler panic now surfaces as `JoinError::is_panic()` on
