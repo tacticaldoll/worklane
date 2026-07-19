@@ -12,10 +12,10 @@ with retries, ack/fail semantics, dead-lettering, and pluggable brokers.
 ## The differentiator: a conformance-verified broker contract
 
 Many job runners are "broker-agnostic." The distinction here is the *layer* and
-the *verification*. Celery (via Kombu) abstracts at the **transport** layer — it
-unifies the messaging API across RabbitMQ / Redis / SQS but job behavior (acks,
-visibility timeouts, retries, dead-lettering) is layered on top and varies by
-broker. `worklane` abstracts at the **job-lifecycle** layer: every backend
+the *verification*. Transport-layer abstractions unify the messaging API across
+backends, but job behavior (acks, visibility timeouts, retries, dead-lettering)
+is layered on top and varies by broker. `worklane` abstracts at the
+**job-lifecycle** layer: every backend
 implements one minimal `Broker` contract and must pass **one shared conformance
 suite** (`worklane-test`), so behavior is identical across backends — verified,
 not hoped, and not a tail of per-broker caveats.

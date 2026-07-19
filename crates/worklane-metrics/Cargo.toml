@@ -17,6 +17,6 @@ metrics = "0.24"
 
 [dev-dependencies]
 tokio.workspace = true
-worklane = { path = "../worklane", version = "0.1.0" }
+worklane = { path = "../worklane", version = "0.2.0" }
 worklane-memory.workspace = true
 metrics-util = "0.19"

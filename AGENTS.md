@@ -238,7 +238,7 @@ handler → ack / retry / fail / dead-letter.
   enqueue/reserve/dispatch/ack/retry/fail/dead-letter is backlog — see `BACKLOG.md`.
 - **Layout:** Cargo workspace. Core crates: `worklane-core` (traits, job model,
   envelope, errors), `worklane-memory` (in-memory broker for dev/tests),
-  `worklane` (facade / public API, worker, client, canvas). Durable brokers:
+  `worklane` (facade / public API, worker, client, workflow). Durable brokers:
   `worklane-sqlite`, `worklane-postgres`, `worklane-redis`. Supporting crates:
   `worklane-scheduler` (cron), `worklane-pubsub` (topic routing),
   `worklane-otel` (trace-context propagation), `worklane-cli` (operator CLI),

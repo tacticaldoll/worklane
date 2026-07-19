@@ -6,7 +6,7 @@ use crate::client::JobBuilder;
 
 impl<'a> JobBuilder<'a> {
     /// Extract the underlying `NewJob` from this builder. Crate-internal: the
-    /// chord path needs the raw core job; app code goes through the enqueue
+    /// fan-in path needs the raw core job; app code goes through the enqueue
     /// methods so lane-registry and offload invariants are not bypassed.
     pub(crate) fn into_inner(self) -> NewJob {
         self.job

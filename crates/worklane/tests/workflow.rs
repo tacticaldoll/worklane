@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use worklane::{Broker, Canvas, ChordResults, Client, Job, JobContext};
+use worklane::{Broker, Client, FanInResults, Job, JobContext, Workflow};
 use worklane_core::JobId;
 use worklane_memory::InMemoryBroker;
 
@@ -24,18 +24,18 @@ impl Job for DummyJob {
     }
 }
 
-/// A chord callback context.
+/// A fan-in callback context.
 #[derive(Serialize, Deserialize)]
 struct Ctx {
     tag: String,
 }
 
-/// A chord callback: its payload is `ChordResults<Ctx>` (context + dep outputs).
+/// A fan-in callback: its payload is `FanInResults<Ctx>` (context + dep outputs).
 struct AggregateJob;
 
 #[worklane::async_trait]
 impl Job for AggregateJob {
-    type Payload = ChordResults<Ctx>;
+    type Payload = FanInResults<Ctx>;
     type Output = ();
     const KIND: &'static str = "aggregate";
 
@@ -86,10 +86,10 @@ async fn test_build_continuation() {
     assert_eq!(job.envelope.id, job_id);
     assert_eq!(job.envelope.kind, DummyJob::KIND);
 
-    // To verify the unique key was set correctly to `chain:{ctx.id}:{J::KIND}`,
+    // To verify the unique key was set correctly to `sequence:{ctx.id}:{J::KIND}`,
     // we enqueue a dummy job with that explicit key. If the key is held, it will dedup
     // and return the existing `job_id`.
-    let expected_key = format!("chain:{}:{}", ctx.id.clone(), DummyJob::KIND);
+    let expected_key = format!("sequence:{}:{}", ctx.id.clone(), DummyJob::KIND);
     let dup_id = client
         .enqueue_unique::<DummyJob>(
             expected_key,
@@ -113,7 +113,7 @@ async fn test_build_continuation_keyed() {
     let payload = DummyJob {
         data: "test".to_string(),
     };
-    let explicit_key = "chord:my-chord-id:callback".to_string();
+    let explicit_key = "fanin:my-fan-in-id:callback".to_string();
 
     // Call build_continuation_keyed
     let job_id = client
@@ -248,12 +248,12 @@ async fn build_continuation_reruns_after_continuation_completes() {
     );
 }
 
-/// A chord dependency carrying a `unique_key` is rejected before anything is
+/// A fan-in dependency carrying a `unique_key` is rejected before anything is
 /// submitted: the atomic batch enqueue could deduplicate the member away, which
 /// would leave the watcher with a dependency id that was never persisted (a
-/// phantom that later falsely completes the chord.
+/// phantom that later falsely completes the fan-in.
 #[tokio::test]
-async fn chord_rejects_dependency_with_unique_key() {
+async fn fan_in_rejects_dependency_with_unique_key() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Client::new(broker.clone());
 
@@ -263,25 +263,25 @@ async fn chord_rejects_dependency_with_unique_key() {
         .with_unique_key("dup");
 
     let result = client
-        .chord::<AggregateJob, _>("chord-1".to_string(), vec![dep], Ctx { tag: "x".into() })
+        .fan_in::<AggregateJob, _>("fan-in-1".to_string(), vec![dep], Ctx { tag: "x".into() })
         .await;
     assert!(
         result.is_err(),
-        "a chord dependency carrying a unique_key must be rejected"
+        "a fan-in dependency carrying a unique_key must be rejected"
     );
 
     let lane = "default".parse().unwrap();
     assert!(
         broker.reserve(&lane).await.unwrap().is_none(),
-        "a rejected chord must submit neither dependencies nor the watcher"
+        "a rejected fan-in must submit neither dependencies nor the watcher"
     );
 }
 
-/// A chord with plain dependencies submits the members and the watcher in one
+/// A fan-in with plain dependencies submits the members and the watcher in one
 /// atomic batch, so each dependency id the watcher carries denotes a persisted
 /// job.
 #[tokio::test]
-async fn chord_submits_dependencies_and_watcher() {
+async fn fan_in_submits_dependencies_and_watcher() {
     let broker = Arc::new(InMemoryBroker::new());
     let client = Client::new(broker.clone());
 
@@ -293,13 +293,13 @@ async fn chord_submits_dependencies_and_watcher() {
         .unwrap();
 
     client
-        .chord::<AggregateJob, _>(
-            "chord-2".to_string(),
+        .fan_in::<AggregateJob, _>(
+            "fan-in-2".to_string(),
             vec![dep_a, dep_b],
             Ctx { tag: "x".into() },
         )
         .await
-        .expect("a chord with plain dependencies must submit");
+        .expect("a fan-in with plain dependencies must submit");
 
     // Two dependencies + one watcher, enqueued atomically on the default lane.
     let lane = "default".parse().unwrap();
