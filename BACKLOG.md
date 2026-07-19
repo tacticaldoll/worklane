@@ -8,6 +8,16 @@ consumer proves their shape. Active work is tracked as OpenSpec changes under
 The core loop (enqueue → reserve → dispatch → ack / retry / fail / dead-letter)
 is solid across the in-memory, SQLite, Postgres, and Redis brokers.
 
+## Strategy
+
+`worklane` is a verified lifecycle queue. Its durable value is not a broad
+transport abstraction, but a small job-lifecycle contract whose behavior is
+checked across supported backends. Mature queue systems converge on the same
+production pressures: precise lifecycle semantics, storage-native durability,
+operator visibility, and predictable failure handling. This backlog records
+work that strengthens those pressures without expanding the core contract before
+a real consumer proves the shape.
+
 ## Shipped
 
 - ✓ **Verified release package gate** — the CI package job verifies packaged
@@ -45,6 +55,31 @@ To support `worklane` acting as an orchestration engine and an
 **Event-Driven Upstream**, we strictly enforce the *Minimal contracts*
 principle: the core knows nothing about events, topics, webhooks, or DAGs. These
 patterns are built *on top* of core primitives.
+
+### Strategic lifecycle positioning
+
+- **Lifecycle semantics guide** — document the exact observable behavior for
+  enqueue, reserve, ack, retry, fail, lease expiry, stale resolution,
+  dead-lettering, scheduling, uniqueness, and delayed visibility in one
+  production-facing guide. The guide should point to the OpenSpec capabilities
+  as the source of truth rather than creating a second contract.
+- **Operator lifecycle inspection** — grow the CLI around lifecycle questions
+  before building a dashboard: pending/running/delayed/failed counts, dead-letter
+  inspection, job classification, requeue, lane health, and storage diagnostics.
+  These commands should expose what already exists in the contract before they
+  justify new broker surface.
+- **Production patterns documentation** — collect application-level recipes for
+  idempotent handlers, transactional enqueue, outbox integration, rate limiting,
+  fan-out/fan-in, webhooks, and cancellation. Patterns that can be handlers,
+  wrappers, metrics, or adapters stay outside the broker contract.
+- **Conformance matrix** — publish a backend-by-backend lifecycle matrix showing
+  which requirements each broker satisfies through `worklane-test`, including
+  optional capabilities such as scheduled enqueue, queue stats, dead-letter
+  inspection, and result stores.
+- **Custom broker conformance guide** — document how a broker author wires a
+  private or third-party broker into `worklane-test`, which lifecycle scenarios
+  are mandatory, how optional capabilities are declared, and what passing the
+  suite means for compatibility.
 
 ### Backends
 

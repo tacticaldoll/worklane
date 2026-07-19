@@ -88,6 +88,42 @@ earliest:
 Do not add concurrency or durable-broker scope merely because a correctness
 foundation enables it. Keep the enabling contract change separate and small.
 
+## Strategy guardrail
+
+`worklane` is a verified lifecycle queue: its core contract is the job
+lifecycle, not a general transport API. The lifecycle is enqueue, reserve, ack,
+retry, fail, lease expiry, dead-lettering, scheduling, and uniqueness. Backends
+are interchangeable only when they pass the same behavioral conformance suite
+for that lifecycle.
+
+Use these tests before adding core surface area:
+
+- A feature belongs in the broker contract only when every supported backend can
+  implement it with the same observable lifecycle semantics.
+- A backend feature is not portable until it can be expressed against SQL and
+  Redis without changing public lifecycle semantics.
+- If a feature can live as a handler, wrapper, CLI command, metric,
+  documentation pattern, or application adapter, it stays out of the core
+  broker contract.
+  Example: a built-in HTTP webhook dispatcher stays out of core because making
+  HTTP calls is an application-level concern that can be implemented as a
+  standard job handler.
+
+Non-goals for the core:
+
+- It is not a general message bus.
+- It is not a workflow engine at the broker layer.
+- It is not a transport abstraction over every broker technology.
+- It is not dashboard-first operations software.
+- It does not promise exactly-once execution.
+- It does not replace idempotent handlers.
+- It does not own application architecture.
+
+When choosing between strategic improvements, prefer lifecycle correctness,
+then cross-backend behavioral conformance, then operator visibility into the
+lifecycle, then developer ergonomics around existing primitives, then
+higher-level orchestration patterns, then new backend breadth.
+
 ## Design principles
 
 General and meant to outlast any specific module. The concrete gates below
