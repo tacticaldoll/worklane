@@ -134,11 +134,6 @@ patterns are built *on top* of core primitives.
 
 ### Strategic lifecycle positioning
 
-- **Lifecycle semantics guide** — document the exact observable behavior for
-  enqueue, reserve, ack, retry, fail, lease expiry, stale resolution,
-  dead-lettering, scheduling, uniqueness, and delayed visibility in one
-  production-facing guide. The guide should point to the OpenSpec capabilities
-  as the source of truth rather than creating a second contract.
 - **Operator lifecycle inspection** — grow the CLI around lifecycle questions
   before building a dashboard. Shipped so far: lane health (`stats`),
   dead-letter inspection/requeue/purge (`dead-letters`), and job classification
@@ -151,14 +146,6 @@ patterns are built *on top* of core primitives.
   idempotent handlers, transactional enqueue, outbox integration, rate limiting,
   fan-out/fan-in, webhooks, and cancellation. Patterns that can be handlers,
   wrappers, metrics, or adapters stay outside the broker contract.
-- **Conformance matrix** — publish a backend-by-backend lifecycle matrix showing
-  which requirements each broker satisfies through `worklane-test`, including
-  optional capabilities such as scheduled enqueue, queue stats, dead-letter
-  inspection, and result stores.
-- **Custom broker conformance guide** — document how a broker author wires a
-  private or third-party broker into `worklane-test`, which lifecycle scenarios
-  are mandatory, how optional capabilities are declared, and what passing the
-  suite means for compatibility.
 
 ### Backends
 

@@ -32,6 +32,36 @@ enqueue -> reserve -> run handler -> ack | retry | defer | fail
 
 See `openspec/specs/broker/spec.md` for the detailed requirements.
 
+## Leases and Stale Resolution
+
+`reserve` returns a `Reservation` carrying the `JobEnvelope` and an **opaque
+reservation receipt**, and hides the job behind a visibility lease for the lease
+duration. The `Reservation` conveys that duration, so a worker can schedule a
+heartbeat `extend` without reading the broker's clock. While leased, the job is
+not returned by any other `reserve`, including a concurrent one on the same lane.
+
+Resolution — `ack`, `retry`, `defer`, `extend`, `fail` — requires a **current**
+receipt. If a lease expires without a valid resolution, the job becomes visible
+again (redelivery) and the now-expired receipt is **rejected** with
+`Error::StaleReservation`; a receipt superseded by a newer reservation of the
+same job is rejected the same way. A stale receipt therefore cannot mutate a job
+that has already moved on — the safety property behind at-least-once redelivery.
+
+Lease expiry is measured against the broker's injected clock. A forward clock
+movement (e.g. an NTP jump) larger than a job's remaining lease may expire that
+lease **even while the original handler is still running**, after which another
+worker may reserve and run the job. Duplicate execution is a permitted
+consequence of at-least-once delivery; handlers must be idempotent, and the
+broker does not try to prevent it.
+
+The priority/visibility/FIFO ordering of `reserve` governs a job's **initial**
+delivery. On **redelivery** a job's position is implementation-defined (a backend
+may keep its original place or treat lease expiry as a new visibility time), so
+callers must not rely on redelivery order.
+
+See `openspec/specs/broker/spec.md` (*Reserve with visibility lease*) for the
+normative contract.
+
 ## Delivery Boundary
 
 Delivery is at-least-once. A job may be run more than once after a worker crash,
