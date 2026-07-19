@@ -59,6 +59,22 @@ second — far below the raw rates above. Tune with `Worker::with_poll_interval`
 and `Worker::with_idle_backoff`, and reduce idle worker count or lengthen the
 interval for cost-sensitive deployments.
 
+### Blocking Handlers And Handler Timeout
+
+Handlers must be **cooperatively async**. The worker runs each handler on its own
+task, so a configured handler timeout fires independently of whether the handler
+yields — it bounds even a non-yielding handler, failing/redelivering the job and
+freeing its concurrency slot — **provided a worker thread is free to poll the
+timeout**. What the timeout cannot do is *preempt* a handler that never yields:
+the orphaned task keeps running until it yields or returns. And if non-yielding
+handlers occupy every worker thread (or on a current-thread runtime), nothing is
+left to poll the timeout until one frees.
+
+Handling: run blocking or CPU-bound work off the async task with
+`tokio::task::spawn_blocking` (or a dedicated thread) and `.await` its result.
+That is the only way to fully remove the dependence on yielding — it keeps the
+async worker threads free for the heartbeat, the timeout, and other jobs.
+
 ### Pre-1.0 API Evolution
 
 This is a `0.x` baseline. Public types are designed for additive evolution, but

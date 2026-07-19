@@ -20,6 +20,18 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **Decouple handler timeout** (`decouple-handler-timeout`) — the handler now
+  runs on its own task and the configured handler timeout races its `JoinHandle`,
+  so on a multi-thread runtime (given a free worker thread) the timeout fires
+  even for a non-yielding handler: the job is failed/redelivered and its slot
+  freed instead of wedging indefinitely. Non-breaking — handlers are already
+  `Send + Sync + 'static` and the per-job `process` future is already spawned,
+  so no new public bound. This **corrected the prior backlog framing**, which
+  wrongly deferred it as needing new `Send + 'static` bounds (a breaking
+  change). Residual, documented honestly: `abort` cannot preempt a truly
+  non-yielding task (the orphan runs to its next yield), and thread saturation
+  or a current-thread runtime still stalls — `spawn_blocking` remains the real
+  bound for CPU-bound work.
 - ✓ **Default-lease single source** (`default-lease-single-source`) — the default
   reservation lease (`Duration::from_secs(30)`), previously a `pub const`
   duplicated in all four backends plus the `worklane-test` harness and five
@@ -291,15 +303,6 @@ High-level patterns built at the client/application layer on the opaque
 
 ### Worker follow-ups
 
-- **Structural handler decoupling** — the heartbeat already runs on its own task,
-  but the handler-timeout is selected against the handler future on the worker's
-  task, so it only fires when the handler yields; a handler that blocks its
-  executor thread without yielding cannot be bounded by the timeout (and on a
-  current-thread runtime also starves the heartbeat). Documented — handlers must be
-  cooperatively async, CPU-bound work belongs in `spawn_blocking`. Decoupling the
-  handler itself onto its own task would make the timeout independent too, but
-  needs `Send + 'static` handler bounds — a breaking API change, deferred to a
-  pre-1.0 evaluation.
 - **Retry strategy trait** — a trait-based retry policy (constant, linear,
   decorrelated-jitter, deadline-aware). Deferred on the *late-introduction-cost*
   test, not for lack of a consumer: it is **additive-later and non-breaking** (add
