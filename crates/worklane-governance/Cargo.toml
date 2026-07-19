@@ -16,4 +16,4 @@ name = "worklane-governance"
 path = "src/main.rs"
 
 [dependencies]
-modou = "0.1"
+modou = "0.2"
