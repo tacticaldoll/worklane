@@ -4,7 +4,11 @@ use worklane_core::{DeadLetterStore, NewJob};
 
 /// A read returns a failed job's envelope and error, and is non-destructive: a
 /// second read still returns it.
-pub async fn read_returns_failed_job<H: BrokerContractHarness>(h: &H) {
+pub async fn read_returns_failed_job<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     dead_letter(b.as_ref(), job("critical"), "boom").await;
     let dead = b.read_dead_letters(&lane("critical"), 10).await.unwrap();
@@ -19,7 +23,11 @@ pub async fn read_returns_failed_job<H: BrokerContractHarness>(h: &H) {
 }
 
 /// A read returns at most `limit` records when more jobs are dead-lettered.
-pub async fn read_bounded_by_limit<H: BrokerContractHarness>(h: &H) {
+pub async fn read_bounded_by_limit<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     for _ in 0..3 {
         dead_letter(b.as_ref(), job("default"), "boom").await;
@@ -38,7 +46,11 @@ pub async fn read_bounded_by_limit<H: BrokerContractHarness>(h: &H) {
 
 /// A read is lane-scoped: dead letters on one lane are invisible to a read for
 /// another lane.
-pub async fn read_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
+pub async fn read_is_lane_scoped<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     dead_letter(b.as_ref(), job("a"), "boom").await;
     let other = b.read_dead_letters(&lane("b"), 10).await.unwrap();
@@ -49,7 +61,11 @@ pub async fn read_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
 }
 
 /// A read preserves the opaque envelope verbatim, including non-UTF-8 payloads.
-pub async fn read_preserves_opaque_envelope<H: BrokerContractHarness>(h: &H) {
+pub async fn read_preserves_opaque_envelope<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let payload = vec![0u8, 159, 146, 150, 255, 0, 1, 2, 254];
     dead_letter(
@@ -69,14 +85,22 @@ pub async fn read_preserves_opaque_envelope<H: BrokerContractHarness>(h: &H) {
 }
 
 /// Reading an empty dead-letter store returns no records.
-pub async fn read_empty_store<H: BrokerContractHarness>(h: &H) {
+pub async fn read_empty_store<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let dead = b.read_dead_letters(&lane("default"), 10).await.unwrap();
     assert!(dead.is_empty(), "an empty dead-letter store reads as empty");
 }
 
 /// The count equals the number of jobs dead-lettered on a lane.
-pub async fn count_reflects_dead_lettered_jobs<H: BrokerContractHarness>(h: &H) {
+pub async fn count_reflects_dead_lettered_jobs<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     for _ in 0..3 {
         dead_letter(b.as_ref(), job("critical"), "boom").await;
@@ -86,7 +110,11 @@ pub async fn count_reflects_dead_lettered_jobs<H: BrokerContractHarness>(h: &H) 
 }
 
 /// The count is lane-scoped: dead letters on one lane do not count for another.
-pub async fn count_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
+pub async fn count_is_lane_scoped<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     dead_letter(b.as_ref(), job("a"), "boom").await;
     let other = b.count_dead_letters(&lane("b")).await.unwrap();
@@ -94,7 +122,11 @@ pub async fn count_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
 }
 
 /// An empty dead-letter store counts zero.
-pub async fn count_empty_store_is_zero<H: BrokerContractHarness>(h: &H) {
+pub async fn count_empty_store_is_zero<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let count = b.count_dead_letters(&lane("default")).await.unwrap();
     assert_eq!(count, 0, "an empty dead-letter store counts as zero");
@@ -102,7 +134,11 @@ pub async fn count_empty_store_is_zero<H: BrokerContractHarness>(h: &H) {
 
 /// The count is non-destructive: counting leaves every record readable and a
 /// recount returns the same value.
-pub async fn count_is_non_destructive<H: BrokerContractHarness>(h: &H) {
+pub async fn count_is_non_destructive<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     for _ in 0..2 {
         dead_letter(b.as_ref(), job("critical"), "boom").await;
@@ -116,7 +152,11 @@ pub async fn count_is_non_destructive<H: BrokerContractHarness>(h: &H) {
 }
 
 /// The count drops by one after a dead-lettered job is requeued.
-pub async fn count_consistent_after_requeue<H: BrokerContractHarness>(h: &H) {
+pub async fn count_consistent_after_requeue<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id = dead_letter(b.as_ref(), job("critical"), "boom").await;
     dead_letter(b.as_ref(), job("critical"), "boom").await;
@@ -131,7 +171,11 @@ pub async fn count_consistent_after_requeue<H: BrokerContractHarness>(h: &H) {
 
 /// Purge removes every dead-letter record for a lane and reports the count; a
 /// subsequent read and count see an empty store.
-pub async fn purge_removes_lane_dead_letters<H: BrokerContractHarness>(h: &H) {
+pub async fn purge_removes_lane_dead_letters<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     dead_letter(b.as_ref(), job("critical"), "boom").await;
     dead_letter(b.as_ref(), job("critical"), "boom").await;
@@ -153,7 +197,11 @@ pub async fn purge_removes_lane_dead_letters<H: BrokerContractHarness>(h: &H) {
 }
 
 /// Purge is lane-scoped: it does not touch other lanes' dead letters.
-pub async fn purge_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
+pub async fn purge_is_lane_scoped<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     dead_letter(b.as_ref(), job("critical"), "boom").await;
     dead_letter(b.as_ref(), job("default"), "boom").await;
@@ -167,7 +215,11 @@ pub async fn purge_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
 }
 
 /// Purging an empty lane removes nothing and returns zero.
-pub async fn purge_empty_lane_is_zero<H: BrokerContractHarness>(h: &H) {
+pub async fn purge_empty_lane_is_zero<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     assert_eq!(b.purge_dead_letters(&lane("default")).await.unwrap(), 0);
 }
@@ -178,7 +230,11 @@ pub async fn purge_empty_lane_is_zero<H: BrokerContractHarness>(h: &H) {
 /// remaining records. A `Mutex`/single-connection broker satisfies this by
 /// construction; a pooled, networked broker must not let the concurrent removal
 /// error or corrupt the read.
-pub async fn read_succeeds_concurrent_with_requeue<H: BrokerContractHarness>(h: &H) {
+pub async fn read_succeeds_concurrent_with_requeue<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: DeadLetterStore,
+{
     let b = h.broker();
     let id = dead_letter(b.as_ref(), job("critical"), "boom").await;
     dead_letter(b.as_ref(), job("critical"), "boom").await;

@@ -154,7 +154,11 @@ async fn batch_enqueue_rejects_unsafe_lane_atomically() {
         job(safe.clone()),
     ];
 
-    let err = b.enqueue_batch(jobs).await;
+    let err = b
+        .batch_enqueue()
+        .expect("Redis broker supports batch enqueue")
+        .enqueue_batch(jobs)
+        .await;
     assert!(err.is_err(), "batch with an unsafe lane must be rejected");
 
     let r = b.reserve(&safe).await.unwrap();

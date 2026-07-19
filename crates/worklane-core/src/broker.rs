@@ -57,20 +57,6 @@ pub trait Broker: Send + Sync {
     /// than minting a new one, which keeps enqueue atomic and replay-friendly.
     async fn enqueue(&self, job: NewJob) -> Result<JobId>;
 
-    /// Store a batch of new jobs atomically and return their assigned ids in the
-    /// same order.
-    ///
-    /// This method guarantees all-or-nothing insertion. If any job in the batch
-    /// violates database constraints, no jobs are persisted.
-    ///
-    /// Unique key semantics:
-    /// - **Inter-batch collision**: If a job's unique key matches an existing live job,
-    ///   it returns the existing `JobId` without aborting the batch.
-    /// - **Intra-batch collision**: Evaluated sequentially. If multiple jobs in the
-    ///   batch share a unique key, the first one is inserted, and subsequent ones
-    ///   return the `JobId` of the first.
-    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>>;
-
     /// Reserve at most one currently-visible job on `lane`, hiding it for a
     /// visibility lease. Returns `None` when no job is available.
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>>;
@@ -125,6 +111,13 @@ pub trait Broker: Send + Sync {
     /// See `openspec/specs/broker/spec.md` for semantic details on terminal states.
     async fn classify(&self, id: JobId) -> Result<JobState>;
 
+    /// The batch-enqueue capability, if this broker provides one. Returns `None`
+    /// by default; a broker that implements [`BatchEnqueue`] overrides this to
+    /// return `Some(self)`.
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        None
+    }
+
     /// The dead-letter inspection and maintenance capability, if this broker
     /// provides one. Returns `None` by default; a broker that implements
     /// [`DeadLetterStore`] overrides this to return `Some(self)`.
@@ -146,6 +139,30 @@ pub trait Broker: Send + Sync {
     fn scheduled_store(self: Arc<Self>) -> Option<Arc<dyn ScheduledStore>> {
         None
     }
+}
+
+/// Atomic batch enqueue — an optional [`Broker`] capability.
+///
+/// Obtained through [`Broker::batch_enqueue`]. A backend that can insert many
+/// jobs in one all-or-nothing operation implements this trait and overrides the
+/// accessor to return `Some(self)`. It is optional because not every backend can
+/// offer atomic multi-row insertion, so it does not belong in the required
+/// lifecycle core.
+#[async_trait]
+pub trait BatchEnqueue: Send + Sync {
+    /// Store a batch of new jobs atomically and return their assigned ids in the
+    /// same order.
+    ///
+    /// This method guarantees all-or-nothing insertion. If any job in the batch
+    /// violates database constraints, no jobs are persisted.
+    ///
+    /// Unique key semantics:
+    /// - **Inter-batch collision**: If a job's unique key matches an existing live job,
+    ///   it returns the existing `JobId` without aborting the batch.
+    /// - **Intra-batch collision**: Evaluated sequentially. If multiple jobs in the
+    ///   batch share a unique key, the first one is inserted, and subsequent ones
+    ///   return the `JobId` of the first.
+    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>>;
 }
 
 /// Dead-letter inspection and maintenance — an optional [`Broker`] capability.
@@ -268,9 +285,6 @@ mod tests {
         async fn enqueue(&self, _job: NewJob) -> Result<JobId> {
             unimplemented!()
         }
-        async fn enqueue_batch(&self, _jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
-            unimplemented!()
-        }
         async fn reserve(&self, _lane: &Lane) -> Result<Option<Reservation>> {
             unimplemented!()
         }
@@ -297,6 +311,10 @@ mod tests {
     #[test]
     fn lifecycle_only_broker_reports_no_optional_capabilities() {
         let b = Minimal;
+        assert!(
+            b.batch_enqueue().is_none(),
+            "default batch_enqueue accessor is None"
+        );
         assert!(
             b.dead_letter_store().is_none(),
             "default dead_letter_store accessor is None"

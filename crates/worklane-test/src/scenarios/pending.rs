@@ -4,7 +4,11 @@ use worklane_core::{Broker, QueueStats};
 
 /// `pending_count` reports live (enqueued, not-yet-resolved) jobs on a lane: it
 /// rises on enqueue, drops when a job is acked, and excludes dead-lettered jobs.
-pub async fn pending_count_reflects_live_jobs<H: BrokerContractHarness>(h: &H) {
+pub async fn pending_count_reflects_live_jobs<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: QueueStats,
+{
     let b = h.broker();
     let l = lane("pending_live");
     assert_eq!(
@@ -42,7 +46,11 @@ pub async fn pending_count_reflects_live_jobs<H: BrokerContractHarness>(h: &H) {
 }
 
 /// `pending_count` is lane-scoped: jobs on other lanes do not contribute.
-pub async fn pending_count_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
+pub async fn pending_count_is_lane_scoped<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: QueueStats,
+{
     let b = h.broker();
     b.enqueue(job("pending_x")).await.unwrap();
     b.enqueue(job("pending_y")).await.unwrap();
@@ -59,7 +67,11 @@ pub async fn pending_count_is_lane_scoped<H: BrokerContractHarness>(h: &H) {
 
 /// An in-flight (reserved-but-unresolved) job still counts as pending — it is live
 /// work, not yet done.
-pub async fn pending_count_includes_in_flight<H: BrokerContractHarness>(h: &H) {
+pub async fn pending_count_includes_in_flight<H>(h: &H)
+where
+    H: BrokerContractHarness,
+    H::Broker: QueueStats,
+{
     let b = h.broker();
     let l = lane("pending_inflight");
     b.enqueue(job("pending_inflight")).await.unwrap();
