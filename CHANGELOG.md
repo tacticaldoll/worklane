@@ -7,6 +7,8 @@ changes.
 
 ## [Unreleased]
 
+## [0.2.1]
+
 ### Fixed
 
 - The worker's handler timeout now bounds a non-cooperative (non-yielding)
