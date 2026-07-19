@@ -213,36 +213,44 @@ drifts. Run it locally with:
 cargo run -p worklane-governance -- check --manifest-path Cargo.toml
 ```
 
-Currently enforced (severity `enforce`, the default):
+Currently enforced (severity `enforce`, the default). Each entry leads with the
+boundary's *reason* — the load-bearing 母則 the rule carries — quoted verbatim
+from the `.because(...)` declaration in `crates/worklane-governance/src/main.rs`.
+This is the prose face of `cargo run -p worklane-governance -- list --format
+markdown`; the two stay in lockstep because a drift test in that crate fails CI
+if a reason here and in the constitution diverge. Reword a reason in one place
+and the gate makes you reword it in both.
 
-- **worklane-core portability** — `worklane-core` must not depend on any other
-  workspace crate. This is the *Broker design gate* and *Minimal contracts* made
-  executable: the contract root stays backend-agnostic.
-- **Broker substitutability** — every broker (the in-memory reference
-  `worklane-memory` and the durable backends `worklane-sqlite`,
-  `worklane-postgres`, `worklane-redis`) may depend on only `worklane-core` among
-  workspace crates, never on another broker or the facade. Substitutability is
-  about passing the same conformance suite, not about durability, so the
-  in-memory reference is governed identically. The rule scopes to normal
-  `[dependencies]`, so the dev-dependency on `worklane-test` (the conformance
-  suite that proves substitutability) is allowed without listing it.
-- **Conformance-suite contract purity** — `worklane-test`, the shared broker
-  conformance suite, may depend on only `worklane-core` (the contract) among
-  workspace crates. It proves substitutability *because* it asserts through the
-  contract alone, each backend supplying its adapter via a dev-dependency; a
+- **worklane-core portability** — *worklane-core is the portable contract root;
+  it must not depend on any other workspace crate.* This is the *Broker design
+  gate* and *Minimal contracts* made executable: the contract root stays
+  backend-agnostic.
+- **Broker substitutability** — *brokers must stay substitutable: depend only on
+  worklane-core, never on another broker or the facade.* Every broker — the
+  in-memory reference `worklane-memory` and the durable backends
+  `worklane-sqlite`, `worklane-postgres`, `worklane-redis` — is governed by this
+  one rule. Substitutability is about passing the same conformance suite, not
+  about durability, so the in-memory reference is governed identically. The rule
+  scopes to normal `[dependencies]`, so the dev-dependency on `worklane-test`
+  (the conformance suite that proves substitutability) is allowed without listing
+  it.
+- **Conformance-suite contract purity** — *the conformance suite must assert only
+  through the contract: depend on worklane-core alone, never on a concrete
+  broker.* `worklane-test` proves substitutability *because* it asserts through
+  the contract alone, each backend supplying its adapter via a dev-dependency; a
   normal dependency on a concrete broker would make the suite backend-specific.
   Same membership-derived rule, governing normal `[dependencies]`.
-- **Governor independence** — `worklane-governance`, the gate itself, must not
-  depend on any workspace crate (it depends only on `tianheng`, external). A
-  gate that imported the crates it judges would entangle its verdict with its
-  subject and could be broken by a change to the very graph it scores. This
-  makes the `rust.yml` "dependency-free" gate property executable.
-- **Facade broker-agnosticism** — `worklane`, the facade (worker, client,
-  workflow over the contract), may depend on only `worklane-core` among
-  workspace crates. The architecture is bring-your-own-broker: users compose a
-  broker crate separately, so the public surface must not pull a concrete broker
-  (or any other workspace crate) in. This is a self-bounding line — the facade
-  not overstepping its own edges — not a route imposed on others.
+- **Governor independence** — *the governance gate must stay independent of the
+  graph it judges: depend only on tianheng, never on a workspace crate.* A gate
+  that imported the crates it judges would entangle its verdict with its subject
+  and could be broken by a change to the very graph it scores. This makes the
+  `rust.yml` "dependency-free" gate property executable.
+- **Facade broker-agnosticism** — *the facade stays broker-agnostic and thin:
+  depend only on worklane-core among workspace crates; bring your own broker.*
+  `worklane` (worker, client, workflow over the contract) is the public surface;
+  the architecture is bring-your-own-broker, so it must not pull a concrete
+  broker (or any other workspace crate) in. This is a self-bounding line — the
+  facade not overstepping its own edges — not a route imposed on others.
 
 Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate
