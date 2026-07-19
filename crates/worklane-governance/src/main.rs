@@ -16,6 +16,24 @@
 use std::process::ExitCode;
 use tianheng::prelude::*;
 
+// The canonical boundary reasons — the load-bearing 母則 each rule carries.
+// `tianheng` foregrounds `.because(...)` in its projections (`list --format
+// markdown`) precisely so an agent reading the law internalises the reason, not
+// just the mechanical rule. These consts are the single source: each is the
+// argument to one `.because(...)` below *and* the string a drift test asserts
+// appears verbatim in `AGENTS.md` §Boundary enforcement, so the constitution
+// and its prose projection cannot diverge silently.
+const CORE_REASON: &str = "worklane-core is the portable contract root; it must \
+    not depend on any other workspace crate";
+const BROKER_REASON: &str = "brokers must stay substitutable: depend only on \
+    worklane-core, never on another broker or the facade";
+const TEST_REASON: &str = "the conformance suite must assert only through the \
+    contract: depend on worklane-core alone, never on a concrete broker";
+const GOVERNANCE_REASON: &str = "the governance gate must stay independent of \
+    the graph it judges: depend only on tianheng, never on a workspace crate";
+const FACADE_REASON: &str = "the facade stays broker-agnostic and thin: depend \
+    only on worklane-core among workspace crates; bring your own broker";
+
 /// The worklane workspace constitution.
 ///
 /// Both boundaries govern *workspace* dependencies, whose membership `tianheng`
@@ -31,10 +49,7 @@ fn constitution() -> Constitution {
         .boundary(
             CrateBoundary::crate_("worklane-core")
                 .forbid_all_workspace_dependencies()
-                .because(
-                    "worklane-core is the portable contract root; it must not \
-                     depend on any other workspace crate",
-                ),
+                .because(CORE_REASON),
         )
         // Every broker stays interchangeable only if none reaches into another
         // broker or the facade — each may depend on worklane-core alone among
@@ -55,11 +70,7 @@ fn constitution() -> Constitution {
         .boundary(
             CrateBoundary::crate_("worklane-test")
                 .restrict_workspace_dependencies_to(["worklane-core"])
-                .because(
-                    "the conformance suite must assert only through the \
-                     contract: depend on worklane-core alone, never on a \
-                     concrete broker",
-                ),
+                .because(TEST_REASON),
         )
         // The gate must stay independent of the graph it judges: a governor
         // that imported the crates it scores would entangle its verdict with
@@ -69,10 +80,7 @@ fn constitution() -> Constitution {
         .boundary(
             CrateBoundary::crate_("worklane-governance")
                 .forbid_all_workspace_dependencies()
-                .because(
-                    "the governance gate must stay independent of the graph it \
-                     judges: depend only on tianheng, never on a workspace crate",
-                ),
+                .because(GOVERNANCE_REASON),
         )
         // The facade is the thin public surface over the contract (worker,
         // client, workflow built on worklane-core). It stays broker-agnostic —
@@ -82,10 +90,7 @@ fn constitution() -> Constitution {
         .boundary(
             CrateBoundary::crate_("worklane")
                 .restrict_workspace_dependencies_to(["worklane-core"])
-                .because(
-                    "the facade stays broker-agnostic and thin: depend only on \
-                     worklane-core among workspace crates; bring your own broker",
-                ),
+                .because(FACADE_REASON),
         )
 }
 
@@ -99,12 +104,44 @@ fn constitution() -> Constitution {
 fn broker_boundary(broker: &str) -> CrateBoundary {
     CrateBoundary::crate_(broker)
         .restrict_workspace_dependencies_to(["worklane-core"])
-        .because(
-            "brokers must stay substitutable: depend only on worklane-core, \
-             never on another broker or the facade",
-        )
+        .because(BROKER_REASON)
 }
 
 fn main() -> ExitCode {
     tianheng::run(&constitution(), std::env::args())
+}
+
+/// The constitution and its prose projection are two faces of one law. The
+/// machine face is enforced by `tianheng` over `cargo metadata`; the prose face
+/// lives in `AGENTS.md` §Boundary enforcement, where an agent reads it before
+/// touching the graph. They share one source — the `*_REASON` consts above — so
+/// this guard turns drift between them into a CI reaction: if a `.because(...)`
+/// reason is reworded without updating the prose (or vice versa), the test
+/// fails until the single source is restored. Whitespace is normalised because
+/// `AGENTS.md` wraps at ~80 columns, so a reason spans several lines there while
+/// the const is one logical string.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AGENTS_MD: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../AGENTS.md"));
+
+    #[test]
+    fn boundary_reasons_are_projected_into_agents_md() {
+        let prose: String = AGENTS_MD.split_whitespace().collect::<Vec<_>>().join(" ");
+        for reason in [
+            CORE_REASON,
+            BROKER_REASON,
+            TEST_REASON,
+            GOVERNANCE_REASON,
+            FACADE_REASON,
+        ] {
+            assert!(
+                prose.contains(reason),
+                "AGENTS.md §Boundary enforcement has drifted from the \
+                 constitution: it must carry this boundary reason verbatim \
+                 (whitespace-insensitive). Add or restore it:\n  {reason}",
+            );
+        }
+    }
 }
