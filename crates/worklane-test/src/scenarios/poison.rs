@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use worklane_core::spi::MAX_DEAD_LETTER_SWEEP;
 use worklane_core::{Broker, DeadLetterStore, NewJob};
 
 use crate::{BrokerConfig, ConfigurableBrokerHarness};
@@ -146,6 +147,58 @@ pub async fn poison_delivery_bound_releases_unique_key<H: ConfigurableBrokerHarn
     assert_ne!(
         first, second,
         "the key must be released when the delivery bound dead-letters the job",
+    );
+}
+
+/// A single `reserve` must not turn an arbitrarily long run of over-budget jobs
+/// into an unbounded sweep: it dead-letters at most [`MAX_DEAD_LETTER_SWEEP`] of
+/// them before yielding empty, and the next `reserve` continues where it left off
+/// (bounded progress). Without the bound, a lane head full of expired-budget jobs
+/// could make one `reserve` walk the entire backlog before returning. Pins the
+/// cap's observable effect — the other poison/dead-letter scenarios only check
+/// that dead-lettering *happens*, never how many a single reserve may move.
+pub async fn poison_sweep_is_bounded_per_reserve<H: ConfigurableBrokerHarness>(h: &H) {
+    let cap = u64::from(MAX_DEAD_LETTER_SWEEP);
+    let total = cap + 2; // just over one cap, so a second sweep finishes the run
+    let (b, clock) = h
+        .build(BrokerConfig::new().with_lease(LEASE).with_max_deliveries(1))
+        .await;
+    let l = lane("sweep");
+
+    // Enqueue `total` distinct jobs, then deliver each exactly once so every job
+    // sits at its delivery bound (deliveries == max == 1). Each reserve hands out a
+    // distinct still-visible job and leases it; after `total` reserves all are
+    // leased, then one clock advance expires every lease at once.
+    for _ in 0..total {
+        b.enqueue(job("sweep")).await.unwrap();
+    }
+    for _ in 0..total {
+        assert!(
+            b.reserve(&l).await.unwrap().is_some(),
+            "each freshly enqueued job is handed out once before hitting its bound",
+        );
+    }
+    clock.advance(LEASE + Duration::from_millis(1));
+
+    // Every job is now over budget. A single reserve sweeps them into the dead
+    // store, but only up to the cap, then yields empty.
+    assert!(
+        b.reserve(&l).await.unwrap().is_none(),
+        "a reserve facing only over-budget jobs must yield empty",
+    );
+    assert_eq!(
+        b.count_dead_letters(&l).await.unwrap(),
+        cap,
+        "a single reserve must dead-letter at most MAX_DEAD_LETTER_SWEEP jobs",
+    );
+
+    // The next reserve continues the sweep rather than stalling or redoing work.
+    assert!(b.reserve(&l).await.unwrap().is_none());
+    assert_eq!(
+        b.count_dead_letters(&l).await.unwrap(),
+        total,
+        "the following reserve sweeps the remainder — the cap bounds each call, \
+         not the total progress",
     );
 }
 

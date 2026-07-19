@@ -19,12 +19,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use worklane_core::spi::MAX_DEAD_LETTER_SWEEP;
 use worklane_core::{
     BatchEnqueue, Broker, Clock, DeadLetter, Error, JobEnvelope, JobId, JobState, Lane, NewJob,
     Reservation, ReservationReceipt, Result, RetentionPolicy, SystemClock, UnboundedDlqWarning,
 };
-
-const MAX_DEAD_LETTER_SWEEP: u32 = 128;
 
 /// The default visibility lease duration.
 pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);

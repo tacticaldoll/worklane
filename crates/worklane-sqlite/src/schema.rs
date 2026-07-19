@@ -1,16 +1,7 @@
 use crate::{Result, sql_err};
 use rusqlite::Connection;
 use worklane_core::Error;
-
-/// The storage-schema version, stamped in `PRAGMA user_version`.
-///
-/// Version 1 is the **baseline** schema. worklane is pre-1.0 and has no stable
-/// on-disk format yet: there is no in-place migration between schema generations.
-/// A fresh database is created at the baseline; a database stamped with any other
-/// version is rejected (drop and recreate it). Migration discipline — a
-/// monotonically increasing version with a `vN→vN+1` step per change — begins at
-/// 1.0, when the on-disk format is frozen.
-const SCHEMA_VERSION: i64 = 1;
+use worklane_core::spi::{SCHEMA_VERSION, SchemaVersionCheck, check_schema_version};
 
 /// The live job store. `seq` is the implicit rowid, giving a stable FIFO order for
 /// `reserve`. `id` denormalizes the envelope's JobId for a by-id liveness lookup
@@ -142,8 +133,10 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .map_err(sql_err)?;
 
-    match version {
-        0 => {
+    // `user_version` 0 is SQLite's unset sentinel — a fresh database with no
+    // version stamped yet; map it to `None` for the shared decision.
+    match check_schema_version((version != 0).then_some(version)) {
+        SchemaVersionCheck::Fresh => {
             for ddl in BASELINE {
                 conn.execute_batch(ddl).map_err(sql_err)?;
             }
@@ -151,8 +144,8 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
                 .map_err(sql_err)?;
             Ok(())
         }
-        v if v == SCHEMA_VERSION => Ok(()),
-        v => Err(Error::Broker(format!(
+        SchemaVersionCheck::Match => Ok(()),
+        SchemaVersionCheck::Mismatch(v) => Err(Error::Broker(format!(
             "sqlite storage schema version {v} is not the supported baseline \
              {SCHEMA_VERSION}; worklane is pre-1.0 and does not migrate between schema \
              generations — drop and recreate the database"

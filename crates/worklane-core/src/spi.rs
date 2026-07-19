@@ -13,6 +13,7 @@
 
 use std::time::Duration;
 
+use crate::broker::JobState;
 use crate::envelope::{JobEnvelope, ReservationReceipt};
 use crate::error::{Error, Result};
 use crate::lane::Lane;
@@ -44,6 +45,18 @@ pub const MAX_TRACE_CONTEXT_ENTRIES: usize = 34;
 /// 8 KiB leaves generous headroom for vendor keys while still bounding the map far
 /// below the envelope ceiling.
 pub const MAX_TRACE_CONTEXT_BYTES: usize = 8 * 1024;
+
+/// Maximum number of poison jobs a single `reserve` may dead-letter before it
+/// yields empty-handed.
+///
+/// When a worker reserves on a lane whose head is a run of jobs that have already
+/// exhausted their delivery budget, the reserve path dead-letters them in passing.
+/// This bounds how many it moves in one call so a large poison run cannot turn a
+/// single `reserve` into an unbounded sweep that starves the caller; the next
+/// `reserve` continues where this one stopped (bounded progress). Every backend
+/// honours the same bound, so the cap lives here rather than as a per-backend
+/// literal that could drift.
+pub const MAX_DEAD_LETTER_SWEEP: u32 = 128;
 
 /// Serialize a job envelope to its opaque storage bytes.
 ///
@@ -145,6 +158,62 @@ pub fn allow_only(lane: &Lane, allow: impl Fn(char) -> bool) -> std::result::Res
     match s.chars().find(|c| !allow(*c)) {
         Some(c) => Err(c),
         None => Ok(s),
+    }
+}
+
+/// Map a backend's stored job-status code to a [`JobState`].
+///
+/// Durable backends record a job's lifecycle position as a small integer: `1` is
+/// live, `2` is dead-lettered; any other value — including a missing row
+/// (`None`) — means the job completed successfully or never existed. Centralizing
+/// the mapping here keeps the SQL and Redis backends from each hand-rolling the
+/// match and drifting on what a code means. Callers pass `Option<i64>` so a
+/// missing row and an unknown code collapse to the same `CompletedOrUnknown`
+/// outcome.
+pub fn classify_state(code: Option<i64>) -> JobState {
+    match code {
+        Some(1) => JobState::Live,
+        Some(2) => JobState::DeadLettered,
+        _ => JobState::CompletedOrUnknown,
+    }
+}
+
+/// The on-storage schema/layout generation every durable backend writes and
+/// verifies.
+///
+/// worklane is pre-1.0 and does not migrate between generations, so a store
+/// written under a different generation is rejected rather than silently
+/// misread. The version and the match-vs-reject decision ([`check_schema_version`])
+/// are shared so the backends cannot disagree on them; each backend keeps its own
+/// dialect-specific read/write of the stored value and its own remediation
+/// message.
+pub const SCHEMA_VERSION: i64 = 1;
+
+/// The outcome of checking a stored schema version against [`SCHEMA_VERSION`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchemaVersionCheck {
+    /// No version is stored yet — the backend should initialize storage to
+    /// [`SCHEMA_VERSION`].
+    Fresh,
+    /// The stored version matches [`SCHEMA_VERSION`] — proceed.
+    Match,
+    /// The stored version differs (the found value is carried) — the backend
+    /// should reject with its own dialect-specific remediation message.
+    Mismatch(i64),
+}
+
+/// Decide how a backend should treat the schema version it read from storage.
+///
+/// `stored` is `None` when the backend found no version recorded (a fresh store)
+/// and `Some(v)` for a present value; a backend maps its own "fresh" sentinel
+/// (e.g. SQLite's `user_version = 0`) to `None` before calling. The caller acts on
+/// the returned [`SchemaVersionCheck`], constructing its own error text on
+/// [`Mismatch`](SchemaVersionCheck::Mismatch).
+pub fn check_schema_version(stored: Option<i64>) -> SchemaVersionCheck {
+    match stored {
+        None => SchemaVersionCheck::Fresh,
+        Some(v) if v == SCHEMA_VERSION => SchemaVersionCheck::Match,
+        Some(v) => SchemaVersionCheck::Mismatch(v),
     }
 }
 
@@ -251,5 +320,28 @@ mod tests {
     fn allow_only_returns_first_disallowed_char() {
         let lane = Lane::try_from("a.b").unwrap();
         assert_eq!(allow_only(&lane, |c| c.is_ascii_alphanumeric()), Err('.'));
+    }
+
+    #[test]
+    fn classify_state_maps_every_arm() {
+        assert_eq!(classify_state(Some(1)), JobState::Live);
+        assert_eq!(classify_state(Some(2)), JobState::DeadLettered);
+        // Unknown code and a missing row both mean completed-or-unknown.
+        assert_eq!(classify_state(Some(0)), JobState::CompletedOrUnknown);
+        assert_eq!(classify_state(Some(99)), JobState::CompletedOrUnknown);
+        assert_eq!(classify_state(None), JobState::CompletedOrUnknown);
+    }
+
+    #[test]
+    fn check_schema_version_decides_fresh_match_mismatch() {
+        assert_eq!(check_schema_version(None), SchemaVersionCheck::Fresh);
+        assert_eq!(
+            check_schema_version(Some(SCHEMA_VERSION)),
+            SchemaVersionCheck::Match
+        );
+        assert_eq!(
+            check_schema_version(Some(SCHEMA_VERSION + 1)),
+            SchemaVersionCheck::Mismatch(SCHEMA_VERSION + 1)
+        );
     }
 }

@@ -20,6 +20,22 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **Cross-broker decision dedup** (`cross-broker-decision-dedup`) — four shared
+  cross-backend decisions that were copy-pasted per backend now live once in
+  `worklane-core` (the `spi::reject_chars` model), so they cannot silently drift:
+  the dead-letter sweep bound (`spi::MAX_DEAD_LETTER_SWEEP`; the Redis `RESERVE`
+  script reads it from a new `ARGV[10]` instead of a Lua literal), the
+  `Option<i64>` → `JobState` classify mapping (`spi::classify_state`), the
+  `spi::SCHEMA_VERSION` const + `check_schema_version` match-vs-reject decision
+  (each backend keeps its own dialect read/write **and** remediation message — the
+  three differ and a Redis test pins its wording), and the dialect-independent
+  retention prune math (`RetentionPolicy::age_cutoff_nanos` / `keep_count`, which
+  also removed the third copy in the Redis reserve path). Behaviour-preserving: no
+  `Broker`/API/schema/wire change; the API change is additive `spi` surface only.
+  A new `poison_sweep_is_bounded_per_reserve` conformance scenario pins the sweep
+  cap's observable bound (none existed) as the regression gate. `DEFAULT_LEASE`
+  was deliberately left out (a user-facing default; see *Deferred*). Archived
+  `--skip-specs` (no observable behaviour change).
 - ✓ **Postgres `enqueue_batch` no-unique-key UNNEST fast path**
   (`postgres-enqueue-batch-unnest`) — when every job in a batch has no
   `unique_key`, `PostgresBroker::enqueue_batch` skips the per-row dedup/claim
@@ -192,17 +208,14 @@ committed third-party-broker product strategy):
   `from_stored`) and has no proven consumer query. Park until a consumer such as
   a CLI `wl jobs --kind X` exists.
 
-- **Cross-broker logic dedup** — non-breaking cleanup, deferrable to a 0.1.x.
-  Several backend internals are copied rather than shared: the dead-letter sweep
-  bound (`MAX_DEAD_LETTER_SWEEP = 128`, **four** copies — the SQLite, Postgres,
-  and memory `const`s plus the Redis Lua literal `sweep_cap = 128` in
-  `crates/worklane-redis/src/scripts.rs`), the `i64`/`Option<i64>` → `JobState`
-  classify mapping (**three** integer-mapping copies — SQLite, Postgres, Redis;
-  the memory broker returns `JobState` directly and is structurally different),
-  the dead-letter prune/retention computation (SQLite ↔ Postgres near-verbatim),
-  and the `SCHEMA_VERSION = 1` baseline-rejection policy (three copies). `worklane_core::spi::reject_chars`
-  and `redact_credentials` are the model: lift the shared *decision* into core
-  and leave each backend only its dialect-specific statements.
+- **Lift `DEFAULT_LEASE` to core** — follow-up to the shipped *cross-broker
+  decision dedup* (which left it out). `pub const DEFAULT_LEASE = 30s` is
+  duplicated across all four backends (and the `worklane-test` harness). Unlike
+  the internal decisions already lifted, this one is a **user-facing constructor
+  default** exported from each backend crate, so lifting it is an API-compatibility
+  decision (a core `pub const` plus a `pub use` re-export per backend to avoid a
+  break, or a deprecation path), not a pure internal move. Park until that
+  re-export/deprecation shape is decided.
 
 ### Performance & hardening (perf/risk scan)
 
