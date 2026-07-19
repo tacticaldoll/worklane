@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -13,14 +13,14 @@ keywords = ["jobs", "queue", "background", "async", "tokio"]
 categories = ["asynchronous", "concurrency"]
 
 [workspace.dependencies]
-worklane-core = { path = "crates/worklane-core", version = "0.2.0" }
-worklane-memory = { path = "crates/worklane-memory", version = "0.2.0" }
-worklane-sqlite = { path = "crates/worklane-sqlite", version = "0.2.0" }
-worklane-postgres = { path = "crates/worklane-postgres", version = "0.2.0" }
-worklane-redis = { path = "crates/worklane-redis", version = "0.2.0" }
-worklane-pubsub = { path = "crates/worklane-pubsub", version = "0.2.0" }
-worklane-scheduler = { path = "crates/worklane-scheduler", version = "0.2.0" }
-worklane-test = { path = "crates/worklane-test", version = "0.2.0" }
+worklane-core = { path = "crates/worklane-core", version = "0.2.1" }
+worklane-memory = { path = "crates/worklane-memory", version = "0.2.1" }
+worklane-sqlite = { path = "crates/worklane-sqlite", version = "0.2.1" }
+worklane-postgres = { path = "crates/worklane-postgres", version = "0.2.1" }
+worklane-redis = { path = "crates/worklane-redis", version = "0.2.1" }
+worklane-pubsub = { path = "crates/worklane-pubsub", version = "0.2.1" }
+worklane-scheduler = { path = "crates/worklane-scheduler", version = "0.2.1" }
+worklane-test = { path = "crates/worklane-test", version = "0.2.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"
