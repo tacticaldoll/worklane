@@ -34,8 +34,8 @@ use async_trait::async_trait;
 use rusqlite::{Connection, OptionalExtension, params};
 use worklane_core::spi::{decode_envelope, encode_envelope, nanos, receipt_key, stale};
 use worklane_core::{
-    Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation, ReservationReceipt, Result,
-    RetentionPolicy, UnboundedDlqWarning, WallClock,
+    BatchEnqueue, Broker, Clock, DeadLetter, Error, JobId, Lane, NewJob, Reservation,
+    ReservationReceipt, Result, RetentionPolicy, UnboundedDlqWarning, WallClock,
 };
 
 mod conn;
@@ -234,18 +234,7 @@ impl SqliteBroker {
 }
 
 #[async_trait]
-impl Broker for SqliteBroker {
-    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
-        let available_at = nanos(self.clock.now().saturating_add(job.delay));
-        self.run(move |conn| {
-            let tx = conn.unchecked_transaction().map_err(sql_err)?;
-            let id = insert_job(&tx, job, available_at)?;
-            tx.commit().map_err(sql_err)?;
-            Ok(id)
-        })
-        .await
-    }
-
+impl BatchEnqueue for SqliteBroker {
     async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> Result<Vec<JobId>> {
         let now_d = self.clock.now();
         self.run(move |conn| {
@@ -259,6 +248,24 @@ impl Broker for SqliteBroker {
             Ok(ids)
         })
         .await
+    }
+}
+
+#[async_trait]
+impl Broker for SqliteBroker {
+    async fn enqueue(&self, job: NewJob) -> Result<JobId> {
+        let available_at = nanos(self.clock.now().saturating_add(job.delay));
+        self.run(move |conn| {
+            let tx = conn.unchecked_transaction().map_err(sql_err)?;
+            let id = insert_job(&tx, job, available_at)?;
+            tx.commit().map_err(sql_err)?;
+            Ok(id)
+        })
+        .await
+    }
+
+    fn batch_enqueue(&self) -> Option<&dyn BatchEnqueue> {
+        Some(self)
     }
 
     async fn reserve(&self, lane: &Lane) -> Result<Option<Reservation>> {

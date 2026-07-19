@@ -40,9 +40,6 @@ impl Broker for FlakyScheduledBroker {
     async fn enqueue(&self, job: NewJob) -> WlResult<JobId> {
         self.inner.enqueue(job).await
     }
-    async fn enqueue_batch(&self, jobs: Vec<NewJob>) -> WlResult<Vec<JobId>> {
-        self.inner.enqueue_batch(jobs).await
-    }
     async fn reserve(&self, lane: &Lane) -> WlResult<Option<Reservation>> {
         self.inner.reserve(lane).await
     }

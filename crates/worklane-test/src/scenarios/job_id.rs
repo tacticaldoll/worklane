@@ -1,6 +1,6 @@
 use super::{job, lane};
 use crate::BrokerContractHarness;
-use worklane_core::{Broker, NewJob, QueueStats};
+use worklane_core::{Broker, NewJob};
 
 /// Enqueue is idempotent on `JobId`: a second enqueue of a job carrying an id a
 /// live job already has returns that same id and creates **no** second job. This
@@ -25,10 +25,11 @@ pub async fn enqueue_is_idempotent_on_job_id<H: BrokerContractHarness>(h: &H) {
     );
 
     // Exactly one job is live on the lane.
-    assert_eq!(
-        b.pending_count(&l).await.unwrap(),
-        1,
-        "a duplicate-id enqueue must not create a second job"
+    let first = b.reserve(&l).await.unwrap().expect("one live job");
+    assert_eq!(first.envelope.id, id, "the live job is the original id");
+    assert!(
+        b.reserve(&l).await.unwrap().is_none(),
+        "a duplicate-id enqueue must not create a second live job"
     );
 }
 
@@ -38,9 +39,14 @@ pub async fn distinct_job_ids_both_enqueue<H: BrokerContractHarness>(h: &H) {
     let l = lane("job_id_distinct");
     b.enqueue(job("job_id_distinct")).await.unwrap();
     b.enqueue(job("job_id_distinct")).await.unwrap();
-    assert_eq!(
-        b.pending_count(&l).await.unwrap(),
-        2,
+    let first = b.reserve(&l).await.unwrap();
+    let second = b.reserve(&l).await.unwrap();
+    assert!(
+        first.is_some() && second.is_some(),
         "two jobs with distinct (freshly minted) ids both enqueue"
+    );
+    assert!(
+        b.reserve(&l).await.unwrap().is_none(),
+        "exactly two distinct-id jobs were enqueued"
     );
 }

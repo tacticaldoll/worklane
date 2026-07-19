@@ -20,6 +20,22 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **Verified broker extensibility** (`verified-broker-extensibility`, 0.2.0) —
+  the `Broker` contract is now an explicit minimal lifecycle core (enqueue,
+  reserve, ack, retry, defer, extend, fail, classify) plus opt-in capability
+  traits discovered through `Option<&dyn Cap>` accessors. Batch enqueue moved
+  off the required trait into a new `BatchEnqueue` capability (joining the
+  already-split `DeadLetterStore`/`QueueStats`/`ScheduledStore`); absent
+  capabilities fail predictably with `Error::UnsupportedCapability`.
+  `worklane-test` is now a modular conformance suite — one mandatory lifecycle
+  battery plus per-capability batteries gated on capability presence, exported
+  for third-party brokers, with omitted capabilities reported visibly.
+  `worklane_core::spi` is documented as the broker-author surface, and the
+  `broker-extensibility` spec, lifecycle-semantics guide, custom-broker
+  conformance guide, and broker conformance matrix make the contract legible.
+  Breaking pre-1.0 API change; all four first-party brokers migrated. Result
+  storage stays storage-adjacent (its own `ResultStore` harness), not promoted
+  to a `Broker` accessor.
 - ✓ **Redis hot-path script cache** — `RedisBroker` now builds and SHA1-hashes
   each lifecycle Lua script exactly once at construction (a `scripts::Scripts`
   struct populated in `connect_with_namespace`, the Redis analogue of the
@@ -118,31 +134,26 @@ patterns are built *on top* of core primitives.
   current design relies on). Parked per *least commitment*
   until a real clustered-deployment demand exists.
 
-### Broker SPI & extensibility (parked — strategic, design ready)
+### Broker SPI & extensibility (shipped in 0.2.0; remainder parked)
 
 The positioning differentiator (see the README's *What makes it different*) is a
-*conformance-verified* job-lifecycle broker contract: today proven by four
-first-party backends passing one shared suite. Turning "**we** support N
-backends" into "**anyone** can add one, safely" is a deliberate, separate bet —
+*conformance-verified* job-lifecycle broker contract. The extension model —
+turning "**we** support N backends" into "**anyone** can add one, safely" —
+shipped in 0.2.0 via `verified-broker-extensibility` (see *Shipped* above):
+capability segregation, the documented `worklane_core::spi` surface, and the
+modular `worklane-test` conformance suite are done. What remains is depth, still
 parked until there is a real external-broker consumer (a NATS/SQS demand, or a
-committed third-party-broker product strategy). Designs are written so the
-trigger can be pulled without rediscovery:
+committed third-party-broker product strategy):
 
-- **Broker capability segregation** — split the `Broker` trait into a minimal
-  core loop plus opt-in capability traits (`BatchEnqueue`, `DeadLetters`,
-  `JobInspector`; `ScheduledStore`/`ResultStore` already split). Prerequisite
-  for a stable SPI; only justified once external brokers are in scope. Until
-  then the unified `Broker` trait stays as-is. **Deliberately deferred past
-  0.1.0**: it is a breaking change to both the `Broker` contract and the now
-  public `worklane-test` conformance suite, so it is not worth doing days before
-  the first publish for zero existing third-party brokers — pre-1.0 lets 0.2
-  break cleanly. Target a 0.2 release.
-- **SPI stability policy** — formally document `worklane_core::spi` + the
-  capability traits as the broker-author extension point, with versioning
-  guarantees. Follows capability segregation.
-- **Adversarial / modular conformance** — restructure `worklane-test` per
-  capability and add fault-injection / concurrency / clock-skew coverage, so it
-  serves as the published acceptance test for third-party brokers.
+- **Adversarial conformance depth** — extend the now-modular `worklane-test`
+  with fault-injection, concurrency, and clock-skew coverage so it serves as a
+  hardened published acceptance test for third-party brokers. The per-capability
+  restructure shipped in 0.2.0; this is the additional adversarial coverage on
+  top of it.
+- **SPI versioning guarantees** — formalize stability/versioning guarantees for
+  `worklane_core::spi` and the capability traits once an external broker pins to
+  them. The surface and audience are documented (0.2.0); the formal
+  version-compatibility promise is what remains.
 
 ### Storage representation
 

@@ -29,7 +29,7 @@ mod retention;
 mod retry;
 pub mod spi;
 
-pub use broker::{Broker, DeadLetterStore, JobState, QueueStats, ScheduledStore};
+pub use broker::{BatchEnqueue, Broker, DeadLetterStore, JobState, QueueStats, ScheduledStore};
 pub use clock::{Clock, SystemClock, WallClock};
 pub use envelope::{
     DEFAULT_MAX_ATTEMPTS, DeadLetter, JobEnvelope, NewJob, Reservation, ReservationReceipt,
