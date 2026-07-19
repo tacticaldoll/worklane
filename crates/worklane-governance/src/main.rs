@@ -2,7 +2,7 @@
 //!
 //! `AGENTS.md` states two load-bearing crate-graph invariants in prose — the
 //! portability of `worklane-core` (the Broker design gate) and the
-//! substitutability of the durable backends. This binary declares them as a
+//! substitutability of the brokers. This binary declares them as a
 //! `tianheng` [`Constitution`] so CI reacts when the graph drifts, instead of the
 //! rules living only as English a reviewer has to remember.
 //!
@@ -36,27 +36,72 @@ fn constitution() -> Constitution {
                      depend on any other workspace crate",
                 ),
         )
-        // Durable backends stay interchangeable only if none reaches into
-        // another backend or the facade — each may depend on worklane-core
-        // alone among workspace crates.
-        .boundary(backend_boundary("worklane-sqlite"))
-        .boundary(backend_boundary("worklane-postgres"))
-        .boundary(backend_boundary("worklane-redis"))
+        // Every broker stays interchangeable only if none reaches into another
+        // broker or the facade — each may depend on worklane-core alone among
+        // workspace crates. Substitutability is about passing the same
+        // conformance suite, not about durability, so the in-memory reference
+        // (worklane-memory) is governed identically to the durable backends.
+        .boundary(broker_boundary("worklane-memory"))
+        .boundary(broker_boundary("worklane-sqlite"))
+        .boundary(broker_boundary("worklane-postgres"))
+        .boundary(broker_boundary("worklane-redis"))
+        // The shared conformance suite proves substitutability only because it
+        // asserts through the contract alone: it must depend on worklane-core
+        // and nothing else among workspace crates, with each backend supplying
+        // its adapter via a dev-dependency. A normal dependency on a concrete
+        // broker would make the suite backend-specific and void the proof.
+        // (AGENTS.md: Minimal contracts — assert only through the contract plus
+        // a per-implementation adapter.)
+        .boundary(
+            CrateBoundary::crate_("worklane-test")
+                .restrict_workspace_dependencies_to(["worklane-core"])
+                .because(
+                    "the conformance suite must assert only through the \
+                     contract: depend on worklane-core alone, never on a \
+                     concrete broker",
+                ),
+        )
+        // The gate must stay independent of the graph it judges: a governor
+        // that imported the crates it scores would entangle its verdict with
+        // its subject, and a change to the governed graph could break the gate
+        // itself. It depends only on tianheng (external), never on a workspace
+        // crate. (rust.yml: a dependency-free gate.)
+        .boundary(
+            CrateBoundary::crate_("worklane-governance")
+                .forbid_all_workspace_dependencies()
+                .because(
+                    "the governance gate must stay independent of the graph it \
+                     judges: depend only on tianheng, never on a workspace crate",
+                ),
+        )
+        // The facade is the thin public surface over the contract (worker,
+        // client, workflow built on worklane-core). It stays broker-agnostic —
+        // bring your own broker — so it must not pull a broker (or any other
+        // workspace crate) in: depend on worklane-core alone among workspace
+        // crates. Users compose a broker crate separately. (AGENTS.md: layout.)
+        .boundary(
+            CrateBoundary::crate_("worklane")
+                .restrict_workspace_dependencies_to(["worklane-core"])
+                .because(
+                    "the facade stays broker-agnostic and thin: depend only on \
+                     worklane-core among workspace crates; bring your own broker",
+                ),
+        )
 }
 
-/// A durable backend may depend on only `worklane-core` among workspace crates.
+/// A broker may depend on only `worklane-core` among workspace crates.
 ///
 /// The rule governs normal `[dependencies]` only, so the dev-dependency on
 /// `worklane-test` — the conformance suite that *proves* substitutability — is
 /// allowed without being listed: it is the mechanism, not a breach. (AGENTS.md:
-/// backends are interchangeable when they pass the same behavioral conformance
+/// brokers are interchangeable when they pass the same behavioral conformance
 /// suite.)
-fn backend_boundary(backend: &str) -> CrateBoundary {
-    CrateBoundary::crate_(backend)
+fn broker_boundary(broker: &str) -> CrateBoundary {
+    CrateBoundary::crate_(broker)
         .restrict_workspace_dependencies_to(["worklane-core"])
         .because(
-            "durable backends must stay substitutable: depend only on \
-             worklane-core, never on another backend or the facade",
+            "brokers must stay substitutable: depend only on worklane-core, \
+             never on another broker or the facade",
         )
 }
 
