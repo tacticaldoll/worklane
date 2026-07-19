@@ -474,8 +474,14 @@ async fn nonyielding_handler_is_timed_out_without_wedging() {
 
     let _ = tx.send(());
     // Generous: the orphaned blocking handler holds its thread until its sleep
-    // ends; the worker itself has already drained.
-    let _ = timeout(Duration::from_secs(5), handle).await;
+    // ends; the worker itself has already drained. The wait is generous, but a
+    // worker panic, join failure, or run error at shutdown must still fail the
+    // test rather than pass silently — assert it like the sibling tests do.
+    timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("run returns after shutdown")
+        .expect("task join")
+        .expect("run result");
 }
 
 /// A handler that panics is contained on the timeout path too. With a timeout
