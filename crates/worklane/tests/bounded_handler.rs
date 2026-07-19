@@ -376,3 +376,169 @@ async fn stale_heartbeat_is_tolerated() {
         .expect("task join")
         .expect("run result");
 }
+
+/// A non-cooperative handler that blocks its thread without yielding is still
+/// bounded by the timeout: with the handler on its own task, the timeout fires on
+/// a free worker thread, the job is dead-lettered, and the worker keeps processing
+/// other jobs rather than wedging its slot. This needs real time and a
+/// multi-thread runtime, because the behaviour under test is a blocked thread,
+/// which paused virtual time cannot model. (Before the handler was decoupled the
+/// timeout shared the handler's task and could not fire here at all.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn nonyielding_handler_is_timed_out_without_wedging() {
+    struct BlockJob;
+    #[async_trait]
+    impl Job for BlockJob {
+        type Payload = Unit;
+        type Output = ();
+        const KIND: &'static str = "block";
+        async fn run(&self, _ctx: JobContext, _p: Unit) -> HandlerResult<()> {
+            // Block the worker thread for far longer than the timeout without ever
+            // yielding at an `.await` — stands in for a tight CPU loop or a
+            // blocking syscall.
+            std::thread::sleep(Duration::from_secs(1));
+            Ok(())
+        }
+    }
+    struct QuickJob {
+        ran: Arc<AtomicUsize>,
+    }
+    #[async_trait]
+    impl Job for QuickJob {
+        type Payload = Unit;
+        type Output = ();
+        const KIND: &'static str = "quick";
+        async fn run(&self, _ctx: JobContext, _p: Unit) -> HandlerResult<()> {
+            self.ran.fetch_add(1, SeqCst);
+            Ok(())
+        }
+    }
+
+    let broker = Arc::new(InMemoryBroker::new().with_lease(Duration::from_secs(30)));
+    let client = Client::new(broker.clone()).with_max_attempts(1);
+    let quick_ran = Arc::new(AtomicUsize::new(0));
+
+    let mut w = Worker::new(broker.clone())
+        .with_concurrency(2)
+        .with_poll_interval(Duration::from_millis(10))
+        .with_handler_timeout(Duration::from_millis(200));
+    w.register(BlockJob).unwrap();
+    w.register(QuickJob {
+        ran: quick_ran.clone(),
+    })
+    .unwrap();
+    let worker = Arc::new(w.build().unwrap());
+
+    client.enqueue::<BlockJob>(Unit).await.unwrap();
+    client.enqueue::<QuickJob>(Unit).await.unwrap();
+
+    let (tx, rx) = oneshot::channel::<()>();
+    let run_worker = worker.clone();
+    let handle = tokio::spawn(async move {
+        run_worker
+            .run(async {
+                let _ = rx.await;
+            })
+            .await
+    });
+
+    // Well before the 1s block would finish: the quick job completed (the worker
+    // is not wedged) and the blocking job was dead-lettered by the timeout.
+    let observed = timeout(Duration::from_millis(800), async {
+        loop {
+            if quick_ran.load(SeqCst) >= 1 && !broker.dead_letters().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(
+        observed.is_ok(),
+        "the timeout must fire and the quick job must run before the blocking handler finishes"
+    );
+
+    let dead = broker.dead_letters();
+    assert_eq!(dead.len(), 1, "the blocking job is dead-lettered");
+    assert_eq!(dead[0].envelope.kind, "block");
+    assert!(
+        dead[0].error.contains("timed out"),
+        "dead-letter records a timeout error, got: {}",
+        dead[0].error
+    );
+    assert_eq!(
+        quick_ran.load(SeqCst),
+        1,
+        "the quick job ran while the other handler was blocked"
+    );
+
+    let _ = tx.send(());
+    // Generous: the orphaned blocking handler holds its thread until its sleep
+    // ends; the worker itself has already drained.
+    let _ = timeout(Duration::from_secs(5), handle).await;
+}
+
+/// A handler that panics is contained on the timeout path too. With a timeout
+/// configured the handler runs on its own task, so the panic surfaces as a
+/// `JoinError` rather than via the inline `catch_unwind`; it is still routed to
+/// the failure path and dead-lettered, and the worker survives. (The no-timeout
+/// inline path is covered in `panic_isolation.rs`.)
+#[tokio::test(start_paused = true)]
+async fn panicking_handler_with_timeout_is_dead_lettered() {
+    struct PanicJob;
+    #[async_trait]
+    impl Job for PanicJob {
+        type Payload = Unit;
+        type Output = ();
+        const KIND: &'static str = "panic";
+        async fn run(&self, _ctx: JobContext, _p: Unit) -> HandlerResult<()> {
+            panic!("boom in handler");
+        }
+    }
+
+    let clock = Arc::new(ManualClock::new());
+    let broker =
+        Arc::new(InMemoryBroker::with_clock(clock.clone()).with_lease(Duration::from_secs(30)));
+    let client = Client::new(broker.clone()).with_max_attempts(1);
+    let mut w = Worker::new(broker.clone())
+        .with_concurrency(1)
+        .with_poll_interval(Duration::from_secs(1))
+        // A timeout is configured (so the handler runs on its own task), but the
+        // panic fires long before it.
+        .with_handler_timeout(Duration::from_secs(600));
+    w.register(PanicJob).unwrap();
+    let worker = Arc::new(w.build().unwrap());
+
+    client.enqueue::<PanicJob>(Unit).await.unwrap();
+
+    let (tx, rx) = oneshot::channel::<()>();
+    let run_worker = worker.clone();
+    let handle = tokio::spawn(async move {
+        run_worker
+            .run(async {
+                let _ = rx.await;
+            })
+            .await
+    });
+
+    spin_until(|| !broker.dead_letters().is_empty()).await;
+    let dead = broker.dead_letters();
+    assert_eq!(dead.len(), 1, "the panicking job is dead-lettered");
+    assert!(
+        dead[0].error.contains("panicked"),
+        "dead-letter records the panic, got: {}",
+        dead[0].error
+    );
+    assert_eq!(
+        broker.len(),
+        0,
+        "no live job remains; the worker survived the panic"
+    );
+
+    let _ = tx.send(());
+    timeout(Duration::from_secs(1), handle)
+        .await
+        .expect("worker survived the handler panic")
+        .expect("task join")
+        .expect("run result");
+}
