@@ -16,72 +16,48 @@
 use modou::prelude::*;
 use std::process::ExitCode;
 
-/// Every crate in the worklane workspace.
+/// The worklane workspace constitution.
 ///
-/// New crates are added here so the `worklane-core` and backend boundaries below
-/// automatically forbid depending on them without anyone editing the rules.
-const WORKSPACE_CRATES: &[&str] = &[
-    "worklane-core",
-    "worklane",
-    "worklane-memory",
-    "worklane-sqlite",
-    "worklane-postgres",
-    "worklane-redis",
-    "worklane-scheduler",
-    "worklane-pubsub",
-    "worklane-otel",
-    "worklane-metrics",
-    "worklane-cli",
-    "worklane-test",
-    "worklane-governance",
-];
-
-/// The internal crates `package` must not depend on: every workspace crate
-/// except itself and those in `allowed`.
-fn forbidden_internal(package: &str, allowed: &[&str]) -> Vec<String> {
-    WORKSPACE_CRATES
-        .iter()
-        .filter(|c| **c != package && !allowed.contains(*c))
-        .map(|c| (*c).to_string())
-        .collect()
+/// Both boundaries govern *workspace* dependencies, whose membership `modou`
+/// derives from `cargo metadata`. A newly added workspace crate is therefore
+/// governed by default — there is no hand-maintained crate list to forget to
+/// update.
+fn constitution() -> Constitution {
+    Constitution::new("worklane")
+        // worklane-core is the portable contract root: traits, job model,
+        // envelope, errors. If it depended on any other workspace crate the
+        // Broker contract would stop being backend-agnostic. (AGENTS.md: Broker
+        // design gate / Minimal contracts.)
+        .boundary(
+            CrateBoundary::crate_("worklane-core")
+                .forbid_all_workspace_dependencies()
+                .because(
+                    "worklane-core is the portable contract root; it must not \
+                     depend on any other workspace crate",
+                ),
+        )
+        // Durable backends stay interchangeable only if none reaches into
+        // another backend or the facade — each may depend on worklane-core
+        // alone among workspace crates.
+        .boundary(backend_boundary("worklane-sqlite"))
+        .boundary(backend_boundary("worklane-postgres"))
+        .boundary(backend_boundary("worklane-redis"))
 }
 
-/// The worklane workspace constitution.
-fn constitution() -> Constitution {
-    // worklane-core is the portable contract root: traits, job model, envelope,
-    // errors. If it depended on any other workspace crate the Broker contract
-    // would stop being backend-agnostic. (AGENTS.md: Broker design gate /
-    // Minimal contracts.)
-    let mut c = Constitution::new("worklane").boundary(
-        CrateBoundary::crate_("worklane-core")
-            .forbid_dependency_on(forbidden_internal("worklane-core", &[]))
-            .because(
-                "worklane-core is the portable contract root; it must not depend \
-                 on any other workspace crate",
-            ),
-    );
-
-    // Durable backends stay interchangeable only if none reaches into another
-    // backend or the facade — each depends on worklane-core alone. Depending on
-    // worklane-test (the conformance suite, a dev-dependency) is allowed: it is
-    // the mechanism that proves substitutability, not a breach of it.
-    // (AGENTS.md: backends are interchangeable when they pass the same
-    // behavioral conformance suite.)
-    for backend in ["worklane-sqlite", "worklane-postgres", "worklane-redis"] {
-        c = c.boundary(
-            CrateBoundary::crate_(backend)
-                .forbid_dependency_on(forbidden_internal(
-                    backend,
-                    &["worklane-core", "worklane-test"],
-                ))
-                .because(
-                    "durable backends must stay substitutable: depend only on \
-                     worklane-core, never on another backend or the facade",
-                ),
-        );
-    }
-
-    c
+/// A durable backend may depend on only `worklane-core` among workspace crates.
+///
+/// The rule governs normal `[dependencies]` only, so the dev-dependency on
+/// `worklane-test` — the conformance suite that *proves* substitutability — is
+/// allowed without being listed: it is the mechanism, not a breach. (AGENTS.md:
+/// backends are interchangeable when they pass the same behavioral conformance
+/// suite.)
+fn backend_boundary(backend: &str) -> CrateBoundary {
+    CrateBoundary::crate_(backend)
+        .restrict_workspace_dependencies_to(["worklane-core"])
+        .because(
+            "durable backends must stay substitutable: depend only on \
+             worklane-core, never on another backend or the facade",
+        )
 }
 
 fn main() -> ExitCode {
