@@ -14,9 +14,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use redis::AsyncCommands;
 use worklane_redis::RedisBroker;
 
-/// The baseline schema version this build supports (kept in sync with the
-/// internal `SCHEMA_VERSION`).
-const BASELINE_VERSION: i64 = 1;
+/// The baseline schema version this build supports — the one source of truth, so
+/// the test cannot drift from the broker.
+use worklane_core::spi::SCHEMA_VERSION as BASELINE_VERSION;
 
 fn test_url() -> Option<String> {
     std::env::var("WORKLANE_REDIS_TEST_URL").ok()
