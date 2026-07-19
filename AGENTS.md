@@ -218,11 +218,31 @@ Currently enforced (severity `enforce`, the default):
 - **worklane-core portability** — `worklane-core` must not depend on any other
   workspace crate. This is the *Broker design gate* and *Minimal contracts* made
   executable: the contract root stays backend-agnostic.
-- **Backend substitutability** — each durable backend (`worklane-sqlite`,
+- **Broker substitutability** — every broker (the in-memory reference
+  `worklane-memory` and the durable backends `worklane-sqlite`,
   `worklane-postgres`, `worklane-redis`) may depend on only `worklane-core` among
-  workspace crates, never on another backend or the facade. The rule scopes to
-  normal `[dependencies]`, so the dev-dependency on `worklane-test` (the
-  conformance suite that proves substitutability) is allowed without listing it.
+  workspace crates, never on another broker or the facade. Substitutability is
+  about passing the same conformance suite, not about durability, so the
+  in-memory reference is governed identically. The rule scopes to normal
+  `[dependencies]`, so the dev-dependency on `worklane-test` (the conformance
+  suite that proves substitutability) is allowed without listing it.
+- **Conformance-suite contract purity** — `worklane-test`, the shared broker
+  conformance suite, may depend on only `worklane-core` (the contract) among
+  workspace crates. It proves substitutability *because* it asserts through the
+  contract alone, each backend supplying its adapter via a dev-dependency; a
+  normal dependency on a concrete broker would make the suite backend-specific.
+  Same membership-derived rule, governing normal `[dependencies]`.
+- **Governor independence** — `worklane-governance`, the gate itself, must not
+  depend on any workspace crate (it depends only on `tianheng`, external). A
+  gate that imported the crates it judges would entangle its verdict with its
+  subject and could be broken by a change to the very graph it scores. This
+  makes the `rust.yml` "dependency-free" gate property executable.
+- **Facade broker-agnosticism** — `worklane`, the facade (worker, client,
+  workflow over the contract), may depend on only `worklane-core` among
+  workspace crates. The architecture is bring-your-own-broker: users compose a
+  broker crate separately, so the public surface must not pull a concrete broker
+  (or any other workspace crate) in. This is a self-bounding line — the facade
+  not overstepping its own edges — not a route imposed on others.
 
 Scope is deliberately *least-commitment*: only invariants this file already
 asserts are encoded. Further candidates (facade-direction rules, intra-crate
