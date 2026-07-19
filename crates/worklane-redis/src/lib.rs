@@ -86,8 +86,8 @@ mod result_store;
 mod scripts;
 pub use result_store::RedisResultStore;
 
-/// The default visibility lease duration.
-pub const DEFAULT_LEASE: Duration = Duration::from_secs(30);
+/// The default visibility lease duration (re-exported single source).
+pub use worklane_core::spi::DEFAULT_LEASE;
 
 /// The `(envelope, error, attempts)` fields of one dead-record hash, each
 /// `Option` so a concurrent delete (nil reply) is tolerated rather than erroring.

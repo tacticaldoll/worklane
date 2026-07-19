@@ -20,6 +20,15 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **Default-lease single source** (`default-lease-single-source`) — the default
+  reservation lease (`Duration::from_secs(30)`), previously a `pub const`
+  duplicated in all four backends plus the `worklane-test` harness and five
+  per-backend contract-test `TEST_LEASE` copies, now lives once as
+  `worklane_core::spi::DEFAULT_LEASE` (beside the other lifted shared defaults).
+  Each backend re-exports it (`pub use`) so `worklane_<backend>::DEFAULT_LEASE`
+  still resolves — non-breaking, value unchanged. Adversarial review moved it from
+  the core root to `spi` (no user-facing consumer justified the root) and caught
+  the missed `TEST_LEASE` copies. Archived `--skip-specs`.
 - ✓ **Cross-broker decision dedup** (`cross-broker-decision-dedup`) — four shared
   cross-backend decisions that were copy-pasted per backend now live once in
   `worklane-core` (the `spi::reject_chars` model), so they cannot silently drift:
@@ -207,15 +216,6 @@ committed third-party-broker product strategy):
   becomes a three-touch change across the serde struct, each SQL backend, and
   `from_stored`) and has no proven consumer query. Park until a consumer such as
   a CLI `wl jobs --kind X` exists.
-
-- **Lift `DEFAULT_LEASE` to core** — follow-up to the shipped *cross-broker
-  decision dedup* (which left it out). `pub const DEFAULT_LEASE = 30s` is
-  duplicated across all four backends (and the `worklane-test` harness). Unlike
-  the internal decisions already lifted, this one is a **user-facing constructor
-  default** exported from each backend crate, so lifting it is an API-compatibility
-  decision (a core `pub const` plus a `pub use` re-export per backend to avoid a
-  break, or a deprecation path), not a pure internal move. Park until that
-  re-export/deprecation shape is decided.
 
 ### Performance & hardening (perf/risk scan)
 

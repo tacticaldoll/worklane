@@ -50,7 +50,7 @@ impl Drop for TempDb {
     }
 }
 
-const TEST_LEASE: Duration = Duration::from_secs(30);
+const TEST_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
 /// Required tier: a file-backed broker (pooled) with the default clock and lease.
 /// `_db` is declared after `broker` so the broker (and its pool) drops first,
