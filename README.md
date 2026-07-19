@@ -305,5 +305,4 @@ export them when the services are up.
 
 ## License
 
-Licensed under either of [MIT](LICENSE-MIT) or
-[Apache-2.0](LICENSE-APACHE) at your option.
+Licensed under either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.
