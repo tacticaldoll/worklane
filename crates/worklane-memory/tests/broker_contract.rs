@@ -40,7 +40,7 @@ impl BrokerContractHarness for MemHarness {
 }
 
 /// Timed tier: a broker on a manual clock with a known lease.
-const TEST_LEASE: Duration = Duration::from_secs(30);
+const TEST_LEASE: Duration = worklane_core::spi::DEFAULT_LEASE;
 
 struct TimedMemHarness {
     broker: Arc<InMemoryBroker>,
