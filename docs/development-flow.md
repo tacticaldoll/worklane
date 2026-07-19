@@ -4,6 +4,17 @@ This project uses OpenSpec for spec-driven development. `AGENTS.md` is the
 authoritative contributor and agent guide; this file is a short checklist for
 running one change with a matching commit rhythm.
 
+## Branches and Releases
+
+Create each development branch from `main` and open its pull request directly against `main`.
+Squash-merge verified pull requests so one coherent milestone becomes one Conventional Commit on
+`main`; the pull request and squash commit both carry durable, non-empty bodies. Keep `main`
+releasable after every merge.
+
+Prepare release metadata through `chore(release): prepare X.Y.Z`, run the complete release gates,
+then create annotated tag `vX.Y.Z` on that commit with message `release: X.Y.Z`. Do not create a
+release branch or an empty release commit.
+
 ## One Change
 
 1. Explore the current specs and code before editing:
@@ -27,6 +38,13 @@ running one change with a matching commit rhythm.
    - commit as `chore(openspec): archive <change-name>`
 
 ## Commit Granularity
+
+Under the squash model above, one milestone = one PR = one squashed commit on
+the dev branch. The granularity below therefore describes what belongs in a
+single squashed PR, not raw feature-branch WIP commits (those are discarded by
+the squash). The OpenSpec lifecycle phases map onto PRs, so a long change may
+land as several squashed commits (e.g. a `propose` PR, one or more apply PRs, a
+`sync` PR) rather than one.
 
 Apply commits should be larger than individual task checkboxes and smaller than
 an entire risky feature. Prefer one commit per coherent milestone that builds,

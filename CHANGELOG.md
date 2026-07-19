@@ -5,6 +5,17 @@ All notable changes to `worklane` are documented here, following
 versioning. While the project is pre-1.0, minor releases may include breaking
 changes.
 
+## [Unreleased]
+
+### Changed
+
+- `worklane-governance` (not published) now declares its constitution with
+  `tianheng` instead of `modou`. `tianheng` is `modou`'s successor — the same
+  reactive-governance model, decomposed into static, semantic, and runtime
+  observation dimensions behind one `Constitution` + `run` shell. The swap is a
+  drop-in: the two enforced crate-graph boundaries and the `check` CLI contract
+  are unchanged. No consumer-facing effect.
+
 ## [0.2.0]
 
 A substantial pre-1.0 release. The `Broker` contract is reshaped into an
