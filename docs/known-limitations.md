@@ -37,6 +37,28 @@ panic, or stale resolution. Handlers must be idempotent.
 Handling: make side effects idempotent with application-level keys, database
 constraints, or external idempotency tokens.
 
+### Poll-Based Idle Load
+
+worklane delivery is poll-based: a worker asks for work by calling
+`Broker::reserve`, and when a lane is empty that call still costs a real query
+or round-trip to the store. Idle workers therefore generate background load that
+scales with worker count and poll rate. As a characterization of the per-call
+cost, 16 consumers spinning `reserve` on an empty lane (single-node services on
+localhost) sustain roughly 2,500 empty reserves/s on Postgres and roughly 96,000
+on Redis — these are the raw round-trip rates, not the steady-state load of a
+default worker (see Handling). This is the deliberate cost of not using a
+push/notify delivery mechanism: worklane keeps `reserve` uniform across every
+backend and avoids the commit serialization that a notify-based path (such as
+Postgres `LISTEN`/`NOTIFY`) would reintroduce. Adding `LISTEN`/`NOTIFY` is a
+non-goal for this reason, not an oversight.
+
+Handling: `Worker::run` already paces idle polling. It waits `poll_interval`
+(default 1s) between empty polls and applies exponential idle backoff up to
+`idle_backoff_cap`, so a steady-state idle worker polls on the order of once per
+second — far below the raw rates above. Tune with `Worker::with_poll_interval`
+and `Worker::with_idle_backoff`, and reduce idle worker count or lengthen the
+interval for cost-sensitive deployments.
+
 ### Pre-1.0 API Evolution
 
 This is a `0.x` baseline. Public types are designed for additive evolution, but
