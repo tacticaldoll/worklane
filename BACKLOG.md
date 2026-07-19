@@ -326,6 +326,27 @@ High-level patterns built at the client/application layer on the opaque
   fan-in/fan-out primitives in user space. Putting them in core would expand the
   contract surface and violate *Minimal contracts*, regardless of demand.
 
+### Governance / boundary enforcement
+
+`crates/worklane-governance` makes the crate-graph invariants executable via a
+`modou` constitution (worklane-core portability, backend substitutability — see
+AGENTS.md). Scope is deliberately least-commitment; these are *candidate*
+boundaries, not yet justified by an invariant this repo asserts, so they are
+deferred rather than pre-built:
+
+- **Facade-direction rules** — assert that backends/leaf crates never depend on
+  the `worklane` facade, and that the dependency arrow only ever points toward
+  `worklane-core`. Today's graph already satisfies this; encode it as boundaries
+  only once a near-miss makes the invariant worth enforcing.
+- **Intra-crate module layering** — `modou`'s `ModuleBoundary` can forbid `use`
+  edges Cargo cannot see (e.g. envelope/model code importing broker internals
+  inside `worklane-core`). Deferred until a concrete layering invariant exists to
+  protect — adding one now would be inventing policy, not recording it.
+- **Severity tiers / baseline** — `modou` supports advisory (`warn`) boundaries
+  and a baseline file to ratchet down existing violations. Unused while every
+  declared boundary is clean at `enforce`; reach for it only when introducing a
+  boundary the tree does not yet satisfy.
+
 ## Guiding principle
 
 Protect the core loop. Most items above are out of scope until a real consumer
