@@ -43,8 +43,9 @@ a real consumer proves the shape.
   `Broker`/API/schema/wire change; the API change is additive `spi` surface only.
   A new `poison_sweep_is_bounded_per_reserve` conformance scenario pins the sweep
   cap's observable bound (none existed) as the regression gate. `DEFAULT_LEASE`
-  was deliberately left out (a user-facing default; see *Deferred*). Archived
-  `--skip-specs` (no observable behaviour change).
+  was deliberately left out as a user-facing default and shipped separately right
+  after (see *Default-lease single source* above). Archived `--skip-specs` (no
+  observable behaviour change).
 - ✓ **Postgres `enqueue_batch` no-unique-key UNNEST fast path**
   (`postgres-enqueue-batch-unnest`) — when every job in a batch has no
   `unique_key`, `PostgresBroker::enqueue_batch` skips the per-row dedup/claim
