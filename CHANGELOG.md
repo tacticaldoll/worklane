@@ -25,8 +25,9 @@ changes.
   `tianheng` instead of `modou`. `tianheng` is `modou`'s successor — the same
   reactive-governance model, decomposed into static, semantic, and runtime
   observation dimensions behind one `Constitution` + `run` shell. The swap is a
-  drop-in: the two enforced crate-graph boundaries and the `check` CLI contract
-  are unchanged. No consumer-facing effect.
+  drop-in on the `check` CLI contract; the enforced boundary set has since been
+  expanded from the original two to the full crate-graph set, and its reasons
+  single-sourced with a drift test. No consumer-facing effect.
 
 ### Documentation
 

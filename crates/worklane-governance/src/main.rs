@@ -1,8 +1,10 @@
 //! Executable architectural governance for the worklane workspace.
 //!
-//! `AGENTS.md` states two load-bearing crate-graph invariants in prose — the
-//! portability of `worklane-core` (the Broker design gate) and the
-//! substitutability of the brokers. This binary declares them as a
+//! `AGENTS.md` states the load-bearing crate-graph invariants in prose —
+//! `worklane-core` portability (the Broker design gate) and broker
+//! substitutability chief among them, plus the conformance-suite, governor,
+//! and facade boundaries that apply the same principles. This binary declares
+//! them as a
 //! `tianheng` [`Constitution`] so CI reacts when the graph drifts, instead of the
 //! rules living only as English a reviewer has to remember.
 //!
@@ -36,10 +38,10 @@ const FACADE_REASON: &str = "the facade stays broker-agnostic and thin: depend \
 
 /// The worklane workspace constitution.
 ///
-/// Both boundaries govern *workspace* dependencies, whose membership `tianheng`
-/// derives from `cargo metadata`. A newly added workspace crate is therefore
-/// governed by default — there is no hand-maintained crate list to forget to
-/// update.
+/// These boundaries govern *workspace* dependencies, whose membership
+/// `tianheng` derives from `cargo metadata`. A newly added workspace crate is
+/// therefore governed by default — there is no hand-maintained crate list to
+/// forget to update.
 fn constitution() -> Constitution {
     Constitution::new("worklane")
         // worklane-core is the portable contract root: traits, job model,

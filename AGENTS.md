@@ -269,7 +269,7 @@ reaction (e.g. `cargo-semver-checks`), kept as its own gate if and when that
 axis is made reactive. Today it is held by the API-stability rules above plus
 human review; do not push it into the architectural constitution.
 
-Operating rule: both boundaries govern *workspace* dependencies, whose
+Operating rule: these boundaries govern *workspace* dependencies, whose
 membership `tianheng` derives from `cargo metadata` — so a newly added workspace
 crate is governed by default, with no hand-maintained crate list to update.
 Relaxing or removing a boundary follows the same discipline as a `Broker`-trait
