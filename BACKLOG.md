@@ -387,6 +387,15 @@ deferred rather than pre-built:
   crossing a seam). `worklane` declares only the static crate-graph dimension
   today; reach for these only once a concrete invariant of that kind exists to
   protect, not because the affordance is now available.
+- **SARIF reaction projection (垂象)** — `tianheng` 0.1.1 adds
+  `check --format sarif`, a vendor-neutral projection GitHub code-scanning
+  inlines onto a PR diff. This is a different axis from the boundary candidates
+  above: it changes where the *reaction* lands, not what the law is. Deferred
+  until a concrete consumer exists — a reviewer or agent who needs the verdict
+  inline on the PR rather than in the `governance` job log. The markdown
+  projection of the law (`list --format markdown`) was the other 0.1.1 surface;
+  it is *not* listed here because it has been adopted — AGENTS.md §Boundary
+  enforcement is now its prose face, kept in lockstep by a drift test.
 
 ## Guiding principle
 
