@@ -50,7 +50,7 @@ job away. Cleanup failures MUST NOT replace the original broker result.
 
 #### Scenario: Batch enqueue failure cleans up all offloads
 
-- **WHEN** a fan-out or chord enqueue offloads one or more payloads
+- **WHEN** a fan-out or fan-in enqueue offloads one or more payloads
 - **AND** broker batch submission fails
 - **THEN** the client SHALL attempt to delete every payload offloaded for that
   failed submission
