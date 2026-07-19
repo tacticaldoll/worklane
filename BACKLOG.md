@@ -333,8 +333,8 @@ High-level patterns built at the client/application layer on the opaque
 ### Governance / boundary enforcement
 
 `crates/worklane-governance` makes the crate-graph invariants executable via a
-`tianheng` constitution (worklane-core portability, backend substitutability —
-see AGENTS.md). Scope is deliberately least-commitment; these are *candidate*
+`tianheng` constitution (see AGENTS.md §Boundary enforcement for the enforced
+set). Scope is deliberately least-commitment; these are *candidate*
 boundaries, not yet justified by an invariant this repo asserts, so they are
 deferred rather than pre-built:
 
