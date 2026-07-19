@@ -422,6 +422,50 @@ impl PostgresBroker {
         }
         Ok(id)
     }
+
+    /// No-unique-key batch fast path: store an entire batch with one multi-row
+    /// `UNNEST` insert, skipping the per-row dedup/claim machinery `insert_job`
+    /// runs for unique keys. Every envelope is encoded up front, so an
+    /// unencodable job returns `Err` before any row is written and the dropped
+    /// transaction rolls the whole batch back (all-or-nothing). The bound arrays
+    /// are built in input order and the statement pins `seq` assignment to that
+    /// order (`WITH ORDINALITY … ORDER BY ord`), so the batch reserves back
+    /// strict-FIFO. Returns the input ids in order; `ON CONFLICT (id) DO NOTHING`
+    /// makes a re-enqueue of a live id a no-op while still returning that id,
+    /// matching `insert_job`. Caller guarantees every job has `unique_key ==
+    /// None`.
+    async fn insert_batch_unnest(
+        &self,
+        tx: &tokio_postgres::Transaction<'_>,
+        jobs: Vec<NewJob>,
+        now_d: Duration,
+    ) -> Result<Vec<JobId>> {
+        let n = jobs.len();
+        let mut ids = Vec::with_capacity(n);
+        let mut id_strs: Vec<String> = Vec::with_capacity(n);
+        let mut lanes: Vec<String> = Vec::with_capacity(n);
+        let mut priorities: Vec<i16> = Vec::with_capacity(n);
+        let mut available_ats: Vec<i64> = Vec::with_capacity(n);
+        let mut envelopes: Vec<Vec<u8>> = Vec::with_capacity(n);
+        for job in jobs {
+            let available_at = nanos(now_d.saturating_add(job.delay));
+            let envelope = job.into_envelope();
+            let blob = encode_envelope(&envelope)?;
+            id_strs.push(envelope.id.to_string());
+            lanes.push(envelope.lane.as_str().to_string());
+            priorities.push(envelope.priority as i16);
+            available_ats.push(available_at);
+            envelopes.push(blob);
+            ids.push(envelope.id);
+        }
+        tx.execute(
+            &self.queries.enqueue_batch_unnest,
+            &[&id_strs, &lanes, &priorities, &available_ats, &envelopes],
+        )
+        .await
+        .map_err(pg_err)?;
+        Ok(ids)
+    }
 }
 
 #[async_trait]
@@ -430,6 +474,17 @@ impl BatchEnqueue for PostgresBroker {
         let now_d = self.clock.now();
         let mut client = self.client().await?;
         let tx = Self::begin(&mut client).await?;
+
+        // Fast path: a batch with no unique keys needs no dedup arbitration, so
+        // skip the per-row claim machinery and store the whole batch with one
+        // multi-row UNNEST insert. An empty batch also lands here (all() is true
+        // over no jobs) and inserts nothing. Any unique-key job routes to the
+        // per-row path below, unchanged.
+        if jobs.iter().all(|j| j.unique_key.is_none()) {
+            let ids = self.insert_batch_unnest(&tx, jobs, now_d).await?;
+            tx.commit().await.map_err(pg_err)?;
+            return Ok(ids);
+        }
 
         // Acquire the unique-key locks up front in a globally consistent (sorted)
         // order so two concurrent batches sharing keys in opposite order cannot
