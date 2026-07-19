@@ -16,4 +16,4 @@ name = "worklane-governance"
 path = "src/main.rs"
 
 [dependencies]
-tianheng = "0.1.1"
+tianheng = "0.1.6"

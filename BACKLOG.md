@@ -340,12 +340,15 @@ deferred rather than pre-built:
 
 - **Facade inbound-rule (module-level)** — the well-shaped guard for a facade is
   a *closed inbound allowlist* on the protected module: "only `crate::facade` may
-  import `crate::internal`". `tianheng` 0.1.0 ships the *forbid-one* inbound rule
-  (`ModuleBoundary…must_not_be_imported_by(importer)`) but not this closed
-  allowlist (`must_only_be_imported_by`), and that gap is the point: forbid-one is
-  an open set — you can name who is banned, never "everyone except the facade" —
-  and aiming it at the crate root is even a deliberate constitution error, so it
-  cannot subtract the facade out. Three things make the closed form admissible and
+  import `crate::internal`". `tianheng` 0.1.0 shipped only the *forbid-one*
+  inbound rule (`ModuleBoundary…must_not_be_imported_by(importer)`); as of
+  0.1.6 the closed allowlist (`must_only_be_imported_by`) is shipped too, so
+  feasibility is no longer the blocker. The distinction it closes still
+  matters: forbid-one is an open set — you can name who is banned, never
+  "everyone except the facade" — and aiming it at the crate root is even a
+  deliberate constitution error, so forbid-one alone cannot subtract the
+  facade out; the closed allowlist is the shape the guard needs. Three
+  things make the closed form admissible and
   non-cosmetic. (1) *Closure* — only an allowlist governs modules added later
   without a constitution edit, the property the membership-derived rules already
   rely on. (2) *Not rustc-redundant* — `pub(in crate::facade)` restricts to an

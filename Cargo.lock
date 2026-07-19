@@ -659,11 +659,12 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "guibiao"
-version = "0.1.1"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "822ce008b18455e4a60395fadd66006a779c3a6bf2df4bd7afb2bd96621dfafd"
+checksum = "0c7d7db0e04b93800f79876b45b799f902991e0c018c6c9e363ac7a115062727"
 dependencies = [
  "serde_json",
+ "xingbiao",
  "xuanji",
 ]
 
@@ -723,12 +724,13 @@ dependencies = [
 
 [[package]]
 name = "hunyi"
-version = "0.1.1"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c16eaf01f69fc7680b3fce4d30d94ec93384ef9370499f673c7068ca00aee23"
+checksum = "fe756bc66f8796b667804ee2edd57c791521638c06833b4f8921f6a7f55f40d3"
 dependencies = [
  "serde_json",
  "syn",
+ "xingbiao",
  "xuanji",
 ]
 
@@ -969,9 +971,9 @@ checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "louke"
-version = "0.1.1"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f24437824296ad6f6b4f64fe75a2f03f262173955e7f4c7400f501574ec15778"
+checksum = "98f8d0430b48b77a2acd7919d1f6311b835ab83b7926a0a533c2b81dec6c8b30"
 dependencies = [
  "xuanji",
 ]
@@ -1880,9 +1882,9 @@ dependencies = [
 
 [[package]]
 name = "tianheng"
-version = "0.1.1"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4731ec267d5b0e9fe76b911a5a6aa49ce11755fd316365e50b211ecb6f3b2fd4"
+checksum = "2a3b241991d5b5db358d9fcb2462e0f68a9a1f3e3515249889bfe6f74303fd54"
 dependencies = [
  "guibiao",
  "hunyi",
@@ -2730,10 +2732,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "xuanji"
-version = "0.1.1"
+name = "xingbiao"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4a6cfce2ca1f6e4bad26dae594ff2611b5fdf2412ddfe0004fa6a3e582b6bf8"
+checksum = "cf269030d94c795a3a494519671d8e750210c47a9d9a6988d45e1c9f857e2af0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "xuanji"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cc447ae0795e900c6236947e8984483f5e19cd30b25798e475a78adc1bed4b6"
 dependencies = [
  "serde_json",
 ]
