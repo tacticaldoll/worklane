@@ -173,32 +173,46 @@ load-bearing abstraction; protect its portability.
 - Converse with users in the language they use (e.g. reply in Chinese to a
   Chinese prompt). The artifact language policy above is independent of this.
 
-## Commits
+## Commit And Integration Governance
 
-- Use Conventional Commits: `type(scope): summary` — lowercase, imperative
-  mood, summary ≤ 72 chars. Types: `feat`, `fix`, `docs`, `refactor`, `test`,
-  `chore`, `build`, `ci`.
-- Scope is optional; prefer the OpenSpec change name or capability
-  (e.g. `feat(add-auth): add password reset endpoint`).
-- Write commit messages in English (per the Language policy).
-- Never bundle unrelated changes into one commit.
+### Branch Commits
 
-### Commit flow across the OpenSpec lifecycle
+- Use Conventional Commits: `type(scope): summary`.
+- Write the subject in English, lowercase imperative mood, at no more than 72 characters.
+- Use the body to record motivation, important decisions, constraints, compatibility, and verification when that context exists.
+- Do not append pull request or issue numbers to the subject or body.
+- Development branches may contain multiple coherent commits because the pull request is squash-merged.
 
-- **Propose:** one `docs(<change>): propose …` for proposal/design/specs/tasks.
-- **Apply:** one or more `feat|fix(<change>): …`. Implement against the change's
-  delta specs (the contract) and verify with the DoD plus tests that encode the
-  spec scenarios. Commit per coherent, compiling milestone — not per checkbox,
-  not one mega-commit.
-- **Sync:** a `docs(specs): sync <change>` commit promoting the *verified* delta
-  specs into `openspec/specs/`. Triggered by verification passing, never before;
-  may run per shipped increment for long-running changes.
-- **Archive:** a `chore(openspec): archive <change>` commit that files the
-  completed change away.
+### Pull Requests
 
-During apply the delta spec in `changes/<change>/specs/` is the verification
-target; `openspec/specs/` records shipped truth and changes only at sync.
-For a short, copyable checklist, see `docs/development-flow.md`.
+- Branch from `main` and open every change directly against `main`.
+- Make the pull request title the intended squash commit subject.
+- Give every pull request a non-empty body explaining why the change is needed, what changed, consequential decisions or tradeoffs, compatibility, and verification.
+- Rebase the branch onto the current `main` before final verification.
+- Do not introduce a release integration branch between a change and `main`.
+
+### Squash Merges
+
+- Squash-merge every verified pull request into `main`.
+- Make the squash subject exactly the approved pull request title.
+- Give every squash commit a non-empty body distilled from the approved pull request body.
+- Do not append a pull request number, issue number, or URL to the squash subject or body.
+- Every content-changing commit on `main`, including release preparation, must come from a squash-merged pull request.
+- The imported `v0.1.0` root predates this governance and is the sole historical exception.
+- Keep `main` releasable after every merge.
+
+### Attribution
+
+- Do not include AI, agent, model, tool, automation, or generation attribution in commits, pull requests, tags, changelogs, or release notes.
+- A `Co-authored-by` trailer is allowed only for a real human contributor.
+
+### Release Finalization
+
+- Prepare release content in a pull request whose squash subject is exactly `chore(release): prepare X.Y.Z`.
+- Give the release preparation squash commit a non-empty body describing scope, compatibility, metadata changes, and verification.
+- Run the complete release gates after that commit reaches `main`.
+- Finalize with annotated tag `vX.Y.Z` on that commit, with message exactly `release: X.Y.Z`.
+- Push the tag without another commit. Release branches and empty release commits are not part of the flow.
 
 ## Build, test, and Definition of Done
 
