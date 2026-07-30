@@ -20,6 +20,15 @@ a real consumer proves the shape.
 
 ## Shipped
 
+- ✓ **Tianheng 0.3 governance runner compatibility**
+  (`upgrade-tianheng-0-3`) — the workspace governance dependency and all six
+  constellation crates now use 0.3.0 while preserving the accepted eight
+  crate-graph boundaries unchanged. Regression coverage pins every normalized
+  boundary record and the runner's clean, enforced-violation, and
+  cannot-judge exit classes. The governance crate remains independent of
+  workspace crates, and the upgrade retains Rust 1.85 compatibility. No
+  sans-I/O law or product dependency was introduced without a concrete
+  decision component.
 - ✓ **Decouple handler timeout** (`decouple-handler-timeout`) — the handler now
   runs on its own task and the configured handler timeout races its `JoinHandle`,
   so on a multi-thread runtime (given a free worker thread) the timeout fires
