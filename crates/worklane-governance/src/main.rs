@@ -125,8 +125,15 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
 
     const AGENTS_MD: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../AGENTS.md"));
+
+    fn workspace_manifest() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("Cargo.toml")
+    }
 
     #[test]
     fn boundary_reasons_are_projected_into_agents_md() {
@@ -145,5 +152,92 @@ mod tests {
                  (whitespace-insensitive). Add or restore it:\n  {reason}",
             );
         }
+    }
+
+    #[test]
+    fn canonical_boundary_records_remain_stable() {
+        let expected = [
+            ("worklane-core", &[][..], CORE_REASON),
+            ("worklane-memory", &["worklane-core"][..], BROKER_REASON),
+            ("worklane-sqlite", &["worklane-core"][..], BROKER_REASON),
+            ("worklane-postgres", &["worklane-core"][..], BROKER_REASON),
+            ("worklane-redis", &["worklane-core"][..], BROKER_REASON),
+            ("worklane-test", &["worklane-core"][..], TEST_REASON),
+            ("worklane-governance", &[][..], GOVERNANCE_REASON),
+            ("worklane", &["worklane-core"][..], FACADE_REASON),
+        ];
+        let declared = constitution();
+        let boundaries = declared.static_boundaries().boundaries();
+
+        assert_eq!(boundaries.len(), expected.len());
+        for (boundary, (target, allowed, reason)) in boundaries.iter().zip(expected) {
+            let Boundary::Crate(boundary) = boundary else {
+                panic!("worklane declares only crate boundaries");
+            };
+            assert_eq!(boundary.target().package, target);
+            assert_eq!(boundary.reason(), reason);
+            assert_eq!(boundary.severity(), Severity::Enforce);
+            assert_eq!(boundary.dependency_kind(), DependencyKind::Normal);
+            assert_eq!(boundary.anchor(), None);
+            let Rule::RestrictWorkspaceDependenciesTo {
+                allowed: declared, ..
+            } = boundary.rule()
+            else {
+                panic!("worklane boundaries use closed workspace allowlists");
+            };
+            assert_eq!(declared, allowed);
+        }
+    }
+
+    #[test]
+    fn runner_returns_zero_for_the_clean_workspace() {
+        let manifest = workspace_manifest();
+        let exit = tianheng::run(
+            &constitution(),
+            [
+                "worklane-governance",
+                "check",
+                "--manifest-path",
+                manifest.to_str().expect("workspace path is UTF-8"),
+                "--format",
+                "json",
+            ],
+        );
+
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn runner_returns_one_for_an_enforced_fixture_violation() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/forbidden-workspace-dependency/Cargo.toml");
+        let fixture_law = Constitution::new("reaction-fixture").boundary(
+            CrateBoundary::crate_("fixture-core")
+                .forbid_all_workspace_dependencies()
+                .because("fixture-core must remain independent"),
+        );
+        let exit = tianheng::run(
+            &fixture_law,
+            [
+                "worklane-governance",
+                "check",
+                "--manifest-path",
+                manifest.to_str().expect("fixture path is UTF-8"),
+                "--format",
+                "json",
+            ],
+        );
+
+        assert_eq!(exit, ExitCode::from(1));
+    }
+
+    #[test]
+    fn runner_returns_two_for_invalid_usage() {
+        let exit = tianheng::run(
+            &constitution(),
+            ["worklane-governance", "check", "--unknown-option"],
+        );
+
+        assert_eq!(exit, ExitCode::from(2));
     }
 }
