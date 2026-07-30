@@ -145,6 +145,12 @@ a real consumer proves the shape.
 - ✓ **Public API documentation and unsafe policy** — crate roots now forbid
   unsafe code, warn on missing public docs, and CI docs deny both rustdoc
   warnings and missing documentation.
+- ✓ **Lengkap fan-in decision boundary** — the facade now adopts published
+  Lengkap 0.1.0 for fixed all-of completion decisions while Worklane retains
+  broker and result-store I/O, checkpoint serialization, polling, failure, and
+  callback reactions. Existing wire shape, checkpoint tuple order, result
+  order, lifecycle behavior, public API, and workspace dependency boundaries
+  remain intact.
 
 ## Deferred
 

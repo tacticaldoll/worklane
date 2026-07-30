@@ -923,6 +923,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
+name = "lengkap"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fbbfa2cd5a7dac040e04c8473dd38fcc7516a1e82cff1c33e8598abc55e8aee"
+dependencies = [
+ "lengkap-contract",
+]
+
+[[package]]
+name = "lengkap-contract"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0c658452115f0b1b7756f2f4683524d5c3dd9b4257f410fe579ddf8ed25be6d"
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2564,6 +2579,7 @@ version = "0.2.1"
 dependencies = [
  "async-trait",
  "futures-util",
+ "lengkap",
  "serde",
  "serde_json",
  "tokio",

@@ -1,5 +1,6 @@
 use crate::Client;
 use async_trait::async_trait;
+use lengkap::{Assembly, Decision, Finding, LocatedFinding};
 use worklane_core::{Job, JobContext, JobId, Result};
 
 /// The Workflow extension trait.
@@ -48,7 +49,7 @@ impl Workflow for Client {
 }
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use worklane_core::NewJob;
 
@@ -276,6 +277,76 @@ impl FanInWatcherPayload {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum FanInImpossible {
+    DeadLettered(JobId),
+    MissingResult(JobId),
+}
+
+fn restore_fan_in_assembly(
+    dependencies: &[JobId],
+    collected: &[(JobId, Vec<u8>)],
+) -> worklane_core::Result<Assembly<Vec<u8>>> {
+    let mut slots: Vec<Option<Vec<u8>>> = (0..dependencies.len()).map(|_| None).collect();
+
+    for (dependency_id, bytes) in collected {
+        let Some(index) = dependencies
+            .iter()
+            .position(|candidate| candidate == dependency_id)
+        else {
+            return Err(worklane_core::Error::Broker(format!(
+                "fan-in checkpoint contains unknown dependency {dependency_id}"
+            )));
+        };
+        if slots[index].is_some() {
+            return Err(worklane_core::Error::Broker(format!(
+                "fan-in checkpoint repeats dependency {dependency_id}"
+            )));
+        }
+        slots[index] = Some(bytes.clone());
+    }
+
+    Ok(Assembly::from_slots(slots))
+}
+
+fn checkpoint_fan_in_assembly(
+    dependencies: &[JobId],
+    previous: &[(JobId, Vec<u8>)],
+    assembly: Assembly<Vec<u8>>,
+) -> worklane_core::Result<Vec<(JobId, Vec<u8>)>> {
+    let mut slots = assembly.into_slots();
+    let mut checkpoint = Vec::with_capacity(dependencies.len());
+
+    // Preserve the prior payload's capture order, then append values first
+    // observed in this generation in dependency order. Lengkap owns slot order;
+    // Worklane continues to own its serialized checkpoint representation.
+    for (dependency_id, _) in previous {
+        let Some(index) = dependencies
+            .iter()
+            .position(|candidate| candidate == dependency_id)
+        else {
+            return Err(worklane_core::Error::Broker(format!(
+                "fan-in checkpoint contains unknown dependency {dependency_id}"
+            )));
+        };
+        let Some(bytes) = slots[index].take() else {
+            return Err(worklane_core::Error::Broker(format!(
+                "fan-in checkpoint lost previously captured dependency {dependency_id}"
+            )));
+        };
+        checkpoint.push((*dependency_id, bytes));
+    }
+
+    checkpoint.extend(
+        dependencies
+            .iter()
+            .copied()
+            .zip(slots)
+            .filter_map(|(dependency_id, value)| value.map(|bytes| (dependency_id, bytes))),
+    );
+    Ok(checkpoint)
+}
+
 /// A self-rescheduling watcher job that polls the `ResultStore` for a fan-in's dependencies.
 /// Once all dependencies are complete, it dispatches the callback job.
 pub struct FanInWatcherJob {
@@ -299,114 +370,117 @@ impl Job for FanInWatcherJob {
         if let Err(msg) = payload.validate() {
             return Err(msg.into());
         }
-        // Capture each dependency's output value (not just its presence). Capture
-        // is monotonic: a value captured in an earlier generation is carried
-        // forward in `collected`, so a later eviction of that result cannot
-        // regress the fan-in. Only deps whose value has never been captured are
-        // polled.
-        let mut collected = payload.collected.clone();
-        let mut captured: HashMap<JobId, usize> = collected
-            .iter()
-            .enumerate()
-            .map(|(index, (id, _))| (*id, index))
-            .collect();
-        let mut pending = Vec::new();
-        for dep_id in &payload.dependencies {
-            if captured.contains_key(dep_id) {
-                continue;
-            }
+        let assembly = restore_fan_in_assembly(&payload.dependencies, &payload.collected)?;
+        let unresolved: Vec<_> = assembly.unresolved_slots().collect();
+        let mut findings = Vec::with_capacity(unresolved.len());
+
+        // Worklane owns evidence discovery. Lengkap sees only domain-normalized
+        // findings for unresolved slots and performs no broker or result-store I/O.
+        for slot in unresolved {
+            let dep_id = payload.dependencies[slot.index()];
             // Classify first. ResultStore bytes alone do not prove completion: a
             // worker writes results before acking, and a stale ack can leave bytes
             // behind while the broker still considers the job live.
-            match self.client.broker.classify(*dep_id).await? {
+            match self.client.broker.classify(dep_id).await? {
                 worklane_core::JobState::DeadLettered => {
+                    findings.push(LocatedFinding::new(
+                        slot,
+                        Finding::Impossible(FanInImpossible::DeadLettered(dep_id)),
+                    ));
+                    break;
+                }
+                worklane_core::JobState::Live => {}
+                worklane_core::JobState::CompletedOrUnknown => {
+                    if let Some(bytes) = self.result_store.get(&dep_id).await? {
+                        findings.push(LocatedFinding::new(slot, Finding::Produced(bytes)));
+                    } else {
+                        findings.push(LocatedFinding::new(
+                            slot,
+                            Finding::Impossible(FanInImpossible::MissingResult(dep_id)),
+                        ));
+                        break;
+                    }
+                }
+            }
+        }
+
+        let decision =
+            assembly
+                .adjudicate(findings)
+                .map_err(|err| -> worklane_core::HandlerError {
+                    format!(
+                        "fan-in {} internal adjudication inconsistency: {err}",
+                        payload.fanin_id
+                    )
+                    .into()
+                })?;
+
+        let results = match decision {
+            Decision::Pending(assembly) => {
+                // Some dependency has never been observed complete. Check the bound.
+                if payload.generation >= payload.max_generations {
+                    return Err(format!(
+                        "Fan-in {} exceeded max generations ({})",
+                        payload.fanin_id, payload.max_generations
+                    )
+                    .into());
+                }
+
+                // Reschedule self to poll again later. The assembly is exported
+                // into Worklane's existing serialized checkpoint shape.
+                let mut next_payload = payload.clone();
+                next_payload.generation = payload.generation.saturating_add(1);
+                next_payload.collected = checkpoint_fan_in_assembly(
+                    &payload.dependencies,
+                    &payload.collected,
+                    assembly,
+                )?;
+                let next_gen = next_payload.generation;
+                let key = format!("fiw:{}:{}", payload.fanin_id, next_gen);
+
+                self.client
+                    .enqueue_inner::<FanInWatcherJob>(
+                        ctx.lane.clone(),
+                        std::time::Duration::from_secs(payload.poll_delay_secs),
+                        Some(key),
+                        next_payload,
+                    )
+                    .await?;
+
+                return Ok(());
+            }
+            Decision::Ready(results) => results,
+            Decision::Impossible { cause, .. } => match cause {
+                FanInImpossible::DeadLettered(dep_id) => {
                     return Err(format!(
                         "Fan-in {} cannot complete: dependency {} was dead-lettered",
                         payload.fanin_id, dep_id
                     )
                     .into());
                 }
-                worklane_core::JobState::Live => {
-                    pending.push(*dep_id);
+                FanInImpossible::MissingResult(dep_id) => {
+                    return Err(format!(
+                        "Fan-in {} cannot aggregate: dependency {} completed but its \
+                         result was evicted before capture (increase the result TTL)",
+                        payload.fanin_id, dep_id
+                    )
+                    .into());
                 }
-                worklane_core::JobState::CompletedOrUnknown => {
-                    if let Some(bytes) = self.result_store.get(dep_id).await? {
-                        let index = collected.len();
-                        collected.push((*dep_id, bytes));
-                        captured.insert(*dep_id, index);
-                    } else {
-                        return Err(format!(
-                            "Fan-in {} cannot aggregate: dependency {} completed but its \
-                             result was evicted before capture (increase the result TTL)",
-                            payload.fanin_id, dep_id
-                        )
-                        .into());
-                    }
-                }
-            }
+            },
+        };
+
+        // Every dependency's value is captured. Lengkap returns outputs in
+        // dependency-slot order for delivery to FanInResults<C>.
+        if results.len() != payload.dependencies.len() {
+            return Err(format!(
+                "fan-in {} internal inconsistency: ready result count {} differs from \
+                     dependency count {}",
+                payload.fanin_id,
+                results.len(),
+                payload.dependencies.len()
+            )
+            .into());
         }
-
-        if !pending.is_empty() {
-            // Some dependency has never been observed complete. Check the bound.
-            if payload.generation >= payload.max_generations {
-                return Err(format!(
-                    "Fan-in {} exceeded max generations ({})",
-                    payload.fanin_id, payload.max_generations
-                )
-                .into());
-            }
-
-            // Reschedule self to poll again later. Clone the whole payload, bump
-            // the generation, and carry the captured values forward (the full
-            // dependency list stays intact; `collected` records which are done).
-            let mut next_payload = payload.clone();
-            // `saturating_add` so a corrupt/extreme generation value can never panic
-            // on overflow; the `max_generations` bound terminates the fan-in long
-            // before this saturates in any real configuration.
-            next_payload.generation = payload.generation.saturating_add(1);
-            next_payload.collected = collected;
-            let next_gen = next_payload.generation;
-
-            // Use a generation-keyed unique key to dedup identical retries of the same generation
-            let key = format!("fiw:{}:{}", payload.fanin_id, next_gen);
-
-            self.client
-                .enqueue_inner::<FanInWatcherJob>(
-                    ctx.lane.clone(),
-                    std::time::Duration::from_secs(payload.poll_delay_secs),
-                    Some(key),
-                    next_payload,
-                )
-                .await?;
-
-            // Ack this generation so it doesn't pollute the dead letter queue
-            return Ok(());
-        }
-
-        // Every dependency's value is captured. Aggregate the outputs in
-        // dependency order and deliver them to the callback as FanInResults<C>.
-        let results: Vec<Vec<u8>> = payload
-            .dependencies
-            .iter()
-            .map(|id| {
-                // With no pending dependency every id is captured, so this is
-                // normally infallible — but return an error instead of panicking if
-                // an inconsistent (e.g. hand-forged or duplicated-id) payload ever
-                // reaches here, so the fan-in fails cleanly rather than crashing the
-                // worker task.
-                captured
-                    .get(id)
-                    .and_then(|index| collected.get(*index))
-                    .map(|(_, bytes)| bytes.clone())
-                    .ok_or_else(|| -> worklane_core::HandlerError {
-                        format!(
-                            "fan-in {} internal inconsistency: dependency {} was not captured",
-                            payload.fanin_id, id
-                        )
-                        .into()
-                    })
-            })
-            .collect::<std::result::Result<_, _>>()?;
 
         // Splice the caller context (opaque bytes) and the captured result bytes
         // into the FanInResults<C> wire form. The watcher does not know C, so the
@@ -478,5 +552,39 @@ mod tests {
 
         assert_eq!(decoded.context, context);
         assert_eq!(decoded.results, vec![vec![1, 2], vec![3, 4]]);
+    }
+
+    #[test]
+    fn lengkap_checkpoint_round_trip_preserves_dependency_slots() {
+        let dependencies = vec![JobId::new(), JobId::new(), JobId::new()];
+        let assembly =
+            restore_fan_in_assembly(&dependencies, &[(dependencies[2], vec![3])]).unwrap();
+
+        let Decision::Pending(assembly) = assembly
+            .adjudicate([LocatedFinding::<_, FanInImpossible>::new(
+                lengkap::Slot::new(0),
+                Finding::Produced(vec![1]),
+            )])
+            .unwrap()
+        else {
+            panic!("one unresolved dependency must remain pending");
+        };
+
+        let checkpoint =
+            checkpoint_fan_in_assembly(&dependencies, &[(dependencies[2], vec![3])], assembly)
+                .unwrap();
+        assert_eq!(
+            checkpoint,
+            vec![(dependencies[2], vec![3]), (dependencies[0], vec![1])]
+        );
+
+        let restored = restore_fan_in_assembly(&dependencies, &checkpoint).unwrap();
+        assert_eq!(restored.value(lengkap::Slot::new(0)), Some(&vec![1]));
+        assert_eq!(restored.value(lengkap::Slot::new(1)), None);
+        assert_eq!(restored.value(lengkap::Slot::new(2)), Some(&vec![3]));
+        assert_eq!(
+            restored.unresolved_slots().collect::<Vec<_>>(),
+            vec![lengkap::Slot::new(1)]
+        );
     }
 }
