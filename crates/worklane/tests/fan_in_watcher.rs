@@ -317,6 +317,13 @@ async fn test_fan_in_watcher_robust_to_result_eviction() {
         CallbackJob::KIND,
         "the fan-in completed instead of regressing on the evicted result"
     );
+    let delivered: FanInResults<CallbackJob> =
+        worklane_core::from_payload(&reserved.envelope.payload).unwrap();
+    assert_eq!(
+        delivered.results,
+        vec![vec![1], vec![2]],
+        "checkpoint restoration preserves dependency order across generations"
+    );
     let dup_id = client
         .enqueue_unique::<CallbackJob>(
             "fanin:evict-fan-in:callback",
