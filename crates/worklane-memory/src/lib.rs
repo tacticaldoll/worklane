@@ -90,6 +90,33 @@ fn prune_dead(inner: &mut Inner, lane: &Lane, policy: &RetentionPolicy, now: Dur
     }
 }
 
+/// Pick the best visible job of `lane` in `jobs` at `now`: the highest-priority
+/// job, tie-broken by earliest `available_at`. Visible means not currently
+/// leased and already at or past its `available_at`. Returns `None` if no job on
+/// `lane` is visible.
+///
+/// Pure: reads only its arguments, performs no I/O, and does not enforce the
+/// delivery bound or dead-letter anything — `reserve` does that around this call.
+fn pick_best(jobs: &[StoredJob], lane: &Lane, now: Duration) -> Option<usize> {
+    let mut best_idx: Option<usize> = None;
+    for (i, job) in jobs.iter().enumerate() {
+        if job.envelope.lane == *lane && job.leased_until.is_none() && job.available_at <= now {
+            if let Some(best) = best_idx {
+                let best_job = &jobs[best];
+                if job.envelope.priority > best_job.envelope.priority
+                    || (job.envelope.priority == best_job.envelope.priority
+                        && job.available_at < best_job.available_at)
+                {
+                    best_idx = Some(i);
+                }
+            } else {
+                best_idx = Some(i);
+            }
+        }
+    }
+    best_idx
+}
+
 struct Inner {
     jobs: Vec<StoredJob>,
     dead: Vec<DeadEntry>,
@@ -346,29 +373,9 @@ impl Broker for InMemoryBroker {
         // the next one, so the bound never starves the lane of healthy jobs.
         let mut swept = 0u32;
         loop {
-            // Consider jobs on the requested lane that are visible.
-            // We pick the one with highest priority, then earliest available_at.
-            let mut best_idx: Option<usize> = None;
-            for (i, job) in inner.jobs.iter().enumerate() {
-                if job.envelope.lane == *lane
-                    && job.leased_until.is_none()
-                    && job.available_at <= now
-                {
-                    if let Some(best) = best_idx {
-                        let best_job = &inner.jobs[best];
-                        if job.envelope.priority > best_job.envelope.priority
-                            || (job.envelope.priority == best_job.envelope.priority
-                                && job.available_at < best_job.available_at)
-                        {
-                            best_idx = Some(i);
-                        }
-                    } else {
-                        best_idx = Some(i);
-                    }
-                }
-            }
-
-            let Some(idx) = best_idx else { return Ok(None) };
+            let Some(idx) = pick_best(&inner.jobs, lane, now) else {
+                return Ok(None);
+            };
 
             if let Some(max) = self.max_deliveries {
                 if inner.jobs[idx].deliveries.saturating_add(1) > max {
@@ -611,5 +618,84 @@ impl worklane_core::ScheduledStore for InMemoryBroker {
         // Idempotent: removing an unknown schedule_id is a no-op.
         self.lock().schedules.remove(schedule_id);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job(lane: &str, available_at_secs: u64, priority: u8) -> StoredJob {
+        StoredJob {
+            envelope: JobEnvelope::new(
+                JobId::new(),
+                Lane::try_from(lane).unwrap(),
+                "kind",
+                Vec::new(),
+                5,
+                priority,
+                None,
+            ),
+            available_at: Duration::from_secs(available_at_secs),
+            leased_until: None,
+            receipt: None,
+            unique_key: None,
+            deliveries: 0,
+        }
+    }
+
+    fn leased(mut j: StoredJob, until_secs: u64) -> StoredJob {
+        j.leased_until = Some(Duration::from_secs(until_secs));
+        j.receipt = Some(ReservationReceipt::new());
+        j
+    }
+
+    #[test]
+    fn picks_the_only_visible_job() {
+        let jobs = vec![job("default", 0, 0)];
+        let lane = Lane::try_from("default").unwrap();
+        assert_eq!(pick_best(&jobs, &lane, Duration::ZERO), Some(0));
+    }
+
+    #[test]
+    fn ignores_jobs_on_other_lanes() {
+        let jobs = vec![job("other", 0, 0)];
+        let lane = Lane::try_from("default").unwrap();
+        assert_eq!(pick_best(&jobs, &lane, Duration::ZERO), None);
+    }
+
+    #[test]
+    fn ignores_a_currently_leased_job() {
+        let jobs = vec![leased(job("default", 0, 0), 100)];
+        let lane = Lane::try_from("default").unwrap();
+        assert_eq!(pick_best(&jobs, &lane, Duration::from_secs(1)), None);
+    }
+
+    #[test]
+    fn ignores_a_job_not_yet_available() {
+        let jobs = vec![job("default", 10, 0)];
+        let lane = Lane::try_from("default").unwrap();
+        assert_eq!(pick_best(&jobs, &lane, Duration::from_secs(5)), None);
+    }
+
+    #[test]
+    fn a_job_exactly_at_its_available_at_is_visible() {
+        let jobs = vec![job("default", 10, 0)];
+        let lane = Lane::try_from("default").unwrap();
+        assert_eq!(pick_best(&jobs, &lane, Duration::from_secs(10)), Some(0));
+    }
+
+    #[test]
+    fn higher_priority_wins_regardless_of_order() {
+        let jobs = vec![job("default", 0, 1), job("default", 0, 9)];
+        let lane = Lane::try_from("default").unwrap();
+        assert_eq!(pick_best(&jobs, &lane, Duration::ZERO), Some(1));
+    }
+
+    #[test]
+    fn equal_priority_ties_broken_by_earliest_available_at() {
+        let jobs = vec![job("default", 20, 5), job("default", 10, 5)];
+        let lane = Lane::try_from("default").unwrap();
+        assert_eq!(pick_best(&jobs, &lane, Duration::from_secs(20)), Some(1));
     }
 }

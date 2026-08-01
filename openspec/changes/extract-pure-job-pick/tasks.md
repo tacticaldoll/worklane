@@ -1,16 +1,16 @@
 ## 1. Extract
 
-- [ ] 1.1 Add `fn pick_best(jobs: &[StoredJob], lane: &Lane, now: Duration) ->
+- [x] 1.1 Add `fn pick_best(jobs: &[StoredJob], lane: &Lane, now: Duration) ->
       Option<usize>` containing the existing scan logic, unchanged.
-- [ ] 1.2 Update `reserve` to call `pick_best` instead of scanning inline.
+- [x] 1.2 Update `reserve` to call `pick_best` instead of scanning inline.
 
 ## 2. Verification
 
-- [ ] 2.1 Add a `#[cfg(test)] mod tests` in `crates/worklane-memory/src/lib.rs`
+- [x] 2.1 Add a `#[cfg(test)] mod tests` in `crates/worklane-memory/src/lib.rs`
       with unit tests for `pick_best`: lane filtering, lease-visibility
       filtering, `available_at` visibility filtering, priority ordering, and
       the available-at tie-break.
-- [ ] 2.2 Run the full Definition of Done (existing `Broker` contract tests must
+- [x] 2.2 Run the full Definition of Done (existing `Broker` contract tests must
       pass unmodified — the regression backstop for this refactor).
 
 ## 3. Sync and archive
