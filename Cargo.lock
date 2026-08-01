@@ -1750,6 +1750,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "sigorta"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba3e54281898f23244d9a8fbf822ade81b83a4fa929c53f045c9cac5e63913b7"
+dependencies = [
+ "sigorta-contract",
+]
+
+[[package]]
+name = "sigorta-contract"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83598df3c6f4aa90cf33c43325af3982c76444a7540f75037d18c8576e8c8202"
+
+[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2582,6 +2597,7 @@ dependencies = [
  "lengkap",
  "serde",
  "serde_json",
+ "sigorta",
  "tokio",
  "tracing",
  "worklane-core",
