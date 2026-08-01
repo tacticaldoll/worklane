@@ -33,5 +33,5 @@
 
 ## 4. Sync and archive
 
-- [ ] 4.1 No capability spec changes to sync (see `specs/README.md`).
-- [ ] 4.2 Archive this change to `openspec/changes/archive/YYYY-MM-DD-adopt-sigorta-for-circuit-breaker/`.
+- [x] 4.1 No capability spec changes to sync (see `specs/README.md`).
+- [x] 4.2 Archive this change to `openspec/changes/archive/YYYY-MM-DD-adopt-sigorta-for-circuit-breaker/`.
