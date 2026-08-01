@@ -15,5 +15,5 @@
 
 ## 3. Sync and archive
 
-- [ ] 3.1 No capability spec changes to sync.
-- [ ] 3.2 Archive this change.
+- [x] 3.1 No capability spec changes to sync.
+- [x] 3.2 Archive this change.
