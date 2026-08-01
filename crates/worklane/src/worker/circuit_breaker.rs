@@ -9,10 +9,18 @@
 //! budget, so a long outage cannot exhaust `max_attempts` and dead-letter the
 //! backlog. When the cooldown elapses the next job is let through as a probe; its
 //! success closes the breaker, its failure re-opens it.
+//!
+//! The closed/open/half-open transition rules themselves — including bounding how
+//! long a single probe may stay outstanding before a fresh one replaces it — are
+//! [`sigorta::Sigorta`]'s: a sans-I/O core with no ambient clock read. This module
+//! owns everything Sigorta deliberately does not: the wall clock, the per-kind
+//! keying, and the policy values.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use sigorta::{Decision, Event, Sigorta};
 
 /// Tuning for a [`CircuitBreaker`].
 #[derive(Debug, Clone)]
@@ -32,38 +40,13 @@ impl Default for CircuitBreakerPolicy {
     }
 }
 
-/// The explicit state of one kind's breaker.
-///
-/// Modeling the three states as a sum type (rather than a `(failures, Option<t>)`
-/// pair) makes the illegal combinations unrepresentable and gives `HalfOpen` a
-/// home: the old design let *every* job deferred during the cooldown through the
-/// instant it elapsed (a thundering herd onto a dependency that may still be
-/// down). `HalfOpen` admits exactly one probe and holds the rest.
-enum BreakerState {
-    /// Healthy. `failures` counts the current run of consecutive failures.
-    Closed { failures: u32 },
-    /// Tripped. Every job is deferred until `until`.
-    Open { until: Instant },
-    /// The cooldown has elapsed and a single probe has been admitted; other jobs
-    /// are deferred until the probe reports back. `probe_expires` bounds the wait
-    /// so a probe that never reports (e.g. its worker died) cannot wedge the kind
-    /// — once it lapses, the next caller becomes a fresh probe.
-    HalfOpen { probe_expires: Instant },
-}
-
-impl Default for BreakerState {
-    fn default() -> Self {
-        BreakerState::Closed { failures: 0 }
-    }
-}
-
 /// Per-kind circuit-breaker state, shared across a worker's in-flight tasks.
 ///
 /// State is per-worker and in-process (a fresh worker starts closed); it uses a
 /// monotonic [`Instant`] clock, independent of the broker's time source.
 pub struct CircuitBreaker {
     policy: CircuitBreakerPolicy,
-    states: Mutex<HashMap<String, BreakerState>>,
+    states: Mutex<HashMap<String, Sigorta>>,
 }
 
 impl CircuitBreaker {
@@ -75,48 +58,23 @@ impl CircuitBreaker {
         }
     }
 
-    /// `open_duration` from now, saturating so an extreme policy cannot panic on
-    /// `Instant` overflow.
-    fn cooldown_end(&self, now: Instant) -> Instant {
-        now.checked_add(self.policy.open_duration).unwrap_or(now)
-    }
-
     /// Decide whether to admit a job of `kind` for dispatch. `None` admits it
     /// (closed, or *the* half-open probe); `Some(delay)` defers it for `delay`
     /// without spending an attempt (open, or a probe already in flight).
-    ///
-    /// This is a state transition, not a pure read: when the cooldown elapses it
-    /// moves `Open → HalfOpen` and admits the caller as the single probe; further
-    /// callers stay deferred until the probe resolves via [`record`](Self::record)
-    /// or its window lapses.
     pub fn admit(&self, kind: &str) -> Option<Duration> {
         let now = Instant::now();
         let mut states = self.states.lock().unwrap_or_else(|e| e.into_inner());
-        let state = states.entry(kind.to_string()).or_default();
-        match state {
-            BreakerState::Closed { .. } => None,
-            BreakerState::Open { until } => {
-                if now < *until {
-                    Some(*until - now)
-                } else {
-                    // Cooldown elapsed: this caller is the probe; hold the rest.
-                    *state = BreakerState::HalfOpen {
-                        probe_expires: self.cooldown_end(now),
-                    };
-                    None
-                }
+        let entry = states.entry(kind.to_string()).or_insert_with(|| {
+            Sigorta::new(self.policy.failure_threshold, self.policy.open_duration)
+        });
+        match entry.admit(now) {
+            Decision::Admitted(next) | Decision::Probing(next) => {
+                *entry = next;
+                None
             }
-            BreakerState::HalfOpen { probe_expires } => {
-                if now < *probe_expires {
-                    Some(*probe_expires - now)
-                } else {
-                    // The in-flight probe never reported back within its window;
-                    // admit a fresh probe rather than wedging the kind forever.
-                    *state = BreakerState::HalfOpen {
-                        probe_expires: self.cooldown_end(now),
-                    };
-                    None
-                }
+            Decision::Rejected { core, retry_after } => {
+                *entry = core;
+                Some(retry_after)
             }
         }
     }
@@ -127,30 +85,15 @@ impl CircuitBreaker {
     pub fn record(&self, kind: &str, success: bool) {
         let now = Instant::now();
         let mut states = self.states.lock().unwrap_or_else(|e| e.into_inner());
-        let state = states.entry(kind.to_string()).or_default();
-        if success {
-            *state = BreakerState::Closed { failures: 0 };
-            return;
-        }
-        match state {
-            BreakerState::Closed { failures } => {
-                let n = failures.saturating_add(1);
-                *state = if n >= self.policy.failure_threshold {
-                    BreakerState::Open {
-                        until: self.cooldown_end(now),
-                    }
-                } else {
-                    BreakerState::Closed { failures: n }
-                };
-            }
-            // A half-open probe failed (or a stray failure arrived while open):
-            // (re-)open for a fresh cooldown.
-            BreakerState::Open { .. } | BreakerState::HalfOpen { .. } => {
-                *state = BreakerState::Open {
-                    until: self.cooldown_end(now),
-                };
-            }
-        }
+        let entry = states.entry(kind.to_string()).or_insert_with(|| {
+            Sigorta::new(self.policy.failure_threshold, self.policy.open_duration)
+        });
+        let event = if success {
+            Event::Success
+        } else {
+            Event::Failure
+        };
+        *entry = entry.record(event, now);
     }
 }
 
