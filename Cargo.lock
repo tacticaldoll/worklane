@@ -1751,18 +1751,18 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sigorta"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba3e54281898f23244d9a8fbf822ade81b83a4fa929c53f045c9cac5e63913b7"
+checksum = "c8b98828fac8e120d6c9f4bf732e9c3765fe255abb8ce4835b39a95951127299"
 dependencies = [
  "sigorta-contract",
 ]
 
 [[package]]
 name = "sigorta-contract"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83598df3c6f4aa90cf33c43325af3982c76444a7540f75037d18c8576e8c8202"
+checksum = "27b48cfab22b4fbf61303eb16494181e61dc1bcbb64e32fcc7db194846a3e696"
 
 [[package]]
 name = "siphasher"
